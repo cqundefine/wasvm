@@ -1,0 +1,9 @@
+callgrind*
+build
+*.js
+wasvm
+random
+tests
+libsodium
+.vscode
+spec
