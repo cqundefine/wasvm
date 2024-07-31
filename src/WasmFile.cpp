@@ -292,7 +292,7 @@ std::vector<uint8_t> BlockType::get_param_types(const WasmFile& wasmFile) const
 
     if (index >= wasmFile.functionTypes.size())
     {
-        printf("Error: Invalid block type index: %d\n", index);
+        fprintf(stderr, "Error: Invalid block type index: %lu\n", index);
         throw InvalidWASMException();
     }
 
@@ -312,7 +312,7 @@ std::vector<uint8_t> BlockType::get_return_types(const WasmFile& wasmFile) const
 
     if (index >= wasmFile.functionTypes.size())
     {
-        printf("Error: Invalid block type index: %d\n", index);
+        fprintf(stderr, "Error: Invalid block type index: %lu\n", index);
         throw InvalidWASMException();
     }
 
