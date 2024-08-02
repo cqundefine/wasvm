@@ -23,8 +23,10 @@ public:
 
     static std::vector<Value> run_function(const std::string& name, const std::vector<Value>& args);
     static std::vector<Value> run_function(uint32_t index, const std::vector<Value>& args);
-    static std::vector<Value> run_function_new_parser(const FunctionType& functionType, const Code& code, const std::vector<Value>& args);
+    static std::vector<Value> run_function(const FunctionType& functionType, const Code& code, const std::vector<Value>& args);
     
+    static uint8_t* memory() { return m_memory; }
+
 private:
     static Value run_bare_code_returning(std::vector<Instruction> instructions, Type returnType);
 
@@ -41,13 +43,11 @@ private:
     static void branch_to_label(uint32_t index);
     static void call_function(uint32_t index);
 
-    static std::vector<Value> run_wasi_call(const std::string& name, const std::vector<Value>& args);
-
     static inline WasmFile m_wasmFile;
     static inline Frame* m_frame;
     static inline std::stack<Frame*> m_frame_stack;
     static inline std::map<uint32_t, Value> m_globals;
     static inline uint8_t* m_memory;
     static inline uint32_t m_memory_size;
-    static inline std::vector<std::vector<uint32_t>> m_tables;
+    static inline std::vector<std::vector<Reference>> m_tables;
 };

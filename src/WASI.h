@@ -2,9 +2,34 @@
 
 #include <cstdint>
 #include <sys/stat.h>
+#include <string>
+#include <vector>
+#include <Value.h>
+
+#define ENUMERATE_WASI_CALL(x) \
+    x(args_get, uint32_t, uint32_t) \
+    x(args_sizes_get, uint32_t, uint32_t) \
+    x(clock_time_get, uint32_t, uint64_t, uint32_t) \
+    x(environ_get, uint32_t, uint32_t) \
+    x(environ_sizes_get, uint32_t, uint32_t) \
+    x(fd_fdstat_get, uint32_t, uint32_t) \
+    x(fd_prestat_dir_name, uint32_t, uint32_t, uint32_t) \
+    x(fd_prestat_get, uint32_t, uint32_t) \
+    x(fd_write, uint32_t, uint32_t, uint32_t, uint32_t) \
+    x(poll_oneoff, uint32_t, uint32_t, uint32_t, uint32_t) \
+    x(proc_exit, uint32_t) \
+    x(random_get, uint32_t, uint32_t)
 
 namespace WASI
 {
+    enum class ClockID : uint32_t
+    {
+        Realtime,
+        Monotonic,
+        ProcessCPUTimeID,
+        ThreadCPUTimeID,
+    };
+
     struct IOVector
     {
         uint32_t pointer;
@@ -91,5 +116,25 @@ namespace WASI
         Rights fs_rights_inheriting;
     };
     static_assert(sizeof(FDStat) == 24);
+
+    enum class PreOpenType : uint8_t
+    {
+        Dir,
+    };
+
+    struct PreStatDir
+    {
+        uint32_t pr_name_len;
+    };
+    static_assert(sizeof(PreStatDir) == 4);
+
+    struct PreStat
+    {
+        PreOpenType pr_type;
+        PreStatDir u;
+    };
+    static_assert(sizeof(PreStat) == 8);
+
+    std::vector<Value> run_wasi_call(const std::string& name, const std::vector<Value>& args);
 }
 

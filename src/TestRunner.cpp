@@ -4,6 +4,39 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
+#include <math.h>
+
+bool float_equals(float a, float b)
+{
+    if (std::isnan(a) && std::isnan(b))
+        return true;
+    return a == b;
+}
+
+bool double_equals(double a, double b)
+{
+    if (std::isnan(a) && std::isnan(b))
+        return true;
+    return a == b;
+}
+
+float parse_float(const std::string& value)
+{
+    // FIXME: NaN types
+    if (value.starts_with("nan"))
+        return std::nanf("");
+    uint32_t valueInt = (uint32_t)std::stoull(value);
+    return *(float*)&valueInt;
+}
+
+double parse_double(const std::string& value)
+{
+    // FIXME: NaN types
+    if (value.starts_with("nan"))
+        return std::nan("");
+    uint64_t valueInt = (uint64_t)std::stoull(value);
+    return *(double*)&valueInt;
+}
 
 TestStats run_tests(const char* path)
 {
@@ -77,6 +110,14 @@ TestStats run_tests(const char* path)
                     {
                         uint64_t rawValue = (uint64_t)std::stoull(argValue.c_str());
                         args.push_back(*(double*)&rawValue);
+                    }
+                    else if (argType == "funcref")
+                    {
+                        args.push_back(Reference { ReferenceType::Function, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
+                    }
+                    else if (argType == "externref")
+                    {
+                        args.push_back(Reference { ReferenceType::Extern, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
                     }
                     else
                     {
@@ -164,6 +205,14 @@ TestStats run_tests(const char* path)
                     {
                         uint64_t rawValue = (uint64_t)std::stoull(argValue.c_str());
                         args.push_back(*(double*)&rawValue);
+                    }
+                    else if (argType == "funcref")
+                    {
+                        args.push_back(Reference { ReferenceType::Function, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
+                    }
+                    else if (argType == "externref")
+                    {
+                        args.push_back(Reference { ReferenceType::Extern, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
                     }
                     else
                     {
@@ -253,12 +302,11 @@ TestStats run_tests(const char* path)
                                 break;
                             }
 
-                            uint32_t value = (uint32_t)std::stoull(expectedValue);
-                            if (*(float*)&value != std::get<float>(returnValues[i]))
+                            if (!float_equals(parse_float(expectedValue), std::get<float>(returnValues[i])))
                             {
                                 stats.failed++;
                                 failed = true;
-                                printf("%s/%u failed: return value %zu has unexpected value %f, expected %f\n", path, line, i, std::get<float>(returnValues[i]), *(float*)&value);
+                                printf("%s/%u failed: return value %zu has unexpected value %f, expected %f\n", path, line, i, std::get<float>(returnValues[i]), parse_float(expectedValue));
                                 break;
                             }
                         }
@@ -272,12 +320,63 @@ TestStats run_tests(const char* path)
                                 break;
                             }
 
-                            uint64_t value = (uint64_t)std::stoull(expectedValue);
-                            if (*(double*)&value != std::get<double>(returnValues[i]))
+                            if (!double_equals(parse_double(expectedValue), std::get<double>(returnValues[i])))
                             {
                                 stats.failed++;
                                 failed = true;
-                                printf("%s/%u failed: return value %zu has unexpected value %lf, expected %lf\n", path, line, i, std::get<double>(returnValues[i]), *(double*)&value);
+                                printf("%s/%u failed: return value %zu has unexpected value %lf, expected %lf\n", path, line, i, std::get<double>(returnValues[i]), parse_double(expectedValue));
+                                break;
+                            }
+                        }
+                        else if (expectedType == "funcref")
+                        {
+                            if (!std::holds_alternative<Reference>(returnValues[i]))
+                            {
+                                stats.failed++;
+                                failed = true;
+                                printf("%s/%u failed: return value %zu has unexpected type %s, expected funcref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
+                                break;
+                            }
+
+                            if (std::get<Reference>(returnValues[i]).type != ReferenceType::Function)
+                            {
+                                stats.failed++;
+                                failed = true;
+                                printf("%s/%u failed: return value %zu has unexpected type %s, expected funcref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
+                                break;
+                            }
+
+                            if ((expectedValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(expectedValue)) != std::get<Reference>(returnValues[i]).index)
+                            {
+                                stats.failed++;
+                                failed = true;
+                                printf("%s/%u failed: return value %zu has unexpected value %d, expected %s\n", path, line, i, std::get<Reference>(returnValues[i]).index, expectedValue.c_str());
+                                break;
+                            }
+                        }
+                        else if (expectedType == "externref")
+                        {
+                            if (!std::holds_alternative<Reference>(returnValues[i]))
+                            {
+                                stats.failed++;
+                                failed = true;
+                                printf("%s/%u failed: return value %zu has unexpected type %s, expected externref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
+                                break;
+                            }
+
+                            if (std::get<Reference>(returnValues[i]).type != ReferenceType::Extern)
+                            {
+                                stats.failed++;
+                                failed = true;
+                                printf("%s/%u failed: return value %zu has unexpected type %s, expected externref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
+                                break;
+                            }
+
+                            if ((expectedValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(expectedValue)) != std::get<Reference>(returnValues[i]).index)
+                            {
+                                stats.failed++;
+                                failed = true;
+                                printf("%s/%u failed: return value %zu has unexpected value %d, expected %s\n", path, line, i, std::get<Reference>(returnValues[i]).index, expectedValue.c_str());
                                 break;
                             }
                         }
@@ -351,6 +450,14 @@ TestStats run_tests(const char* path)
                     {
                         uint64_t rawValue = (uint64_t)std::stoull(argValue.c_str());
                         args.push_back(*(double*)&rawValue);
+                    }
+                    else if (argType == "funcref")
+                    {
+                        args.push_back(Reference { ReferenceType::Function, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
+                    }
+                    else if (argType == "externref")
+                    {
+                        args.push_back(Reference { ReferenceType::Extern, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
                     }
                     else
                     {

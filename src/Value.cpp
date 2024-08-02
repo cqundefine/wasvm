@@ -17,7 +17,7 @@ template <>
 const char* value_type_name<double> = "f64";
 
 template <>
-const char* value_type_name<FunctionRefrence> = "funcref";
+const char* value_type_name<Reference> = "funcref/externref";
 
 template <>
 const char* value_type_name<Label> = "label";
@@ -35,7 +35,7 @@ const char* get_value_variant_name_by_index(size_t index)
         case 3:
             return "f64";
         case 4:
-            return "funcref";
+            return "funcref/externref";
         case 5:
             return "label";
         default:

@@ -42,7 +42,7 @@ struct NoneArguments
 struct Instruction
 {
     Opcode opcode;
-    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, MemArg, Type, Label, uint32_t, uint64_t, float, double> arguments;
+    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, std::vector<uint8_t>, MemArg, Type, Label, uint32_t, uint64_t, float, double> arguments;
 };
 
 std::vector<Instruction> parse(Stream& stream, const WasmFile& wasmFile);

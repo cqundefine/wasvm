@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bit>
+#include <cassert>
 #include <cmath>
 #include <Value.h>
 
@@ -89,11 +90,26 @@ GENERIC_UNARY_OPERATION_FUNCTION(neg, -);
 GENERIC_UNARY_OPERATION_FUNCTION(ceil, std::ceil);
 GENERIC_UNARY_OPERATION_FUNCTION(floor, std::floor);
 GENERIC_UNARY_OPERATION_FUNCTION(trunc, std::trunc);
-GENERIC_UNARY_OPERATION_FUNCTION(nearest, std::round);
+GENERIC_UNARY_OPERATION_FUNCTION(nearest, std::nearbyint);
 GENERIC_UNARY_OPERATION_FUNCTION(sqrt, std::sqrt);
 
 template <typename T>
 Value operation_eqz(T a)
 {
     return (uint32_t)(a == 0);
+}
+
+template <typename TruncatedType, typename T>
+Value operation_trunc(T a)
+{
+    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "run_truncate_instruction is meant for floating point to integer conversions");
+    
+    if (std::isnan(a) || std::isinf(a))
+        throw Trap();
+
+    a = std::trunc(a);
+
+    // FIXME: Check the limits
+
+    return (ToValueType<TruncatedType>)(TruncatedType)a;
 }

@@ -5,12 +5,15 @@
 #include <VM.h>
 #include <WASI.h>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <utility>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <Util.h>
 
 void VM::bootup(WasmFile& file)
 {
@@ -38,24 +41,28 @@ void VM::bootup(WasmFile& file)
     {
         m_memory_size = file.memories.at(0).limits.min;
         m_memory = (uint8_t*)malloc(m_memory_size * WASM_PAGE_SIZE);
+        memset(m_memory, 0, m_memory_size * WASM_PAGE_SIZE);
     }
 
     for (const auto& data : file.dataBlocks)
     {
-        Value beginValue = run_bare_code_returning(data.expr, i32);
-        assert(std::holds_alternative<uint32_t>(beginValue));
-        uint32_t begin = std::get<uint32_t>(beginValue);
+        if (data.type == 0)
+        {
+            Value beginValue = run_bare_code_returning(data.expr, i32);
+            assert(std::holds_alternative<uint32_t>(beginValue));
+            uint32_t begin = std::get<uint32_t>(beginValue);
 
-        memcpy(m_memory + begin, data.data.data(), data.data.size());
+            memcpy(m_memory + begin, data.data.data(), data.data.size());
+        }
     }
 
     for (const auto& table : file.tables)
     {
         assert(table.limits.min <= table.limits.max);
-        std::vector<uint32_t> tableVector;
+        std::vector<Reference> tableVector;
         tableVector.reserve(table.limits.min);
         for (uint32_t i = 0; i < table.limits.min; i++)
-            tableVector.push_back(UINT32_MAX);
+            tableVector.push_back(Reference { get_reference_type_from_reftype(table.refType), UINT32_MAX });
         m_tables.push_back(tableVector);
     }
 
@@ -68,7 +75,7 @@ void VM::bootup(WasmFile& file)
             uint32_t begin = std::get<uint32_t>(beginValue);
             for (size_t i = 0; i < element.functionIndexes.size(); i++)
             {
-                m_tables[0][begin + i] = element.functionIndexes.at(i);
+                m_tables[0][begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i] };
             }
         }
         else if (element.type == 2)
@@ -78,7 +85,7 @@ void VM::bootup(WasmFile& file)
             uint32_t begin = std::get<uint32_t>(beginValue);
             for (size_t i = 0; i < element.functionIndexes.size(); i++)
             {
-                m_tables[element.table][begin + i] = element.functionIndexes.at(i);
+                m_tables[element.table][begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i] };
             }
         }
         else
@@ -86,6 +93,9 @@ void VM::bootup(WasmFile& file)
             assert(false);
         }
     }
+
+    if (file.startFunction != UINT32_MAX)
+        run_function(file.startFunction, {});
 }
 
 std::vector<Value> VM::run_function(const std::string& name, const std::vector<Value>& args)
@@ -97,10 +107,10 @@ std::vector<Value> VM::run_function(const std::string& name, const std::vector<V
 
 std::vector<Value> VM::run_function(uint32_t index, const std::vector<Value>& args)
 {
-    return run_function_new_parser(m_wasmFile.functionTypes[m_wasmFile.functionTypeIndexes[index]], m_wasmFile.codeBlocks[index], args);
+    return run_function(m_wasmFile.functionTypes[m_wasmFile.functionTypeIndexes[index]], m_wasmFile.codeBlocks[index], args);
 }
 
-std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType, const Code& code, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(const FunctionType& functionType, const Code& code, const std::vector<Value>& args)
 {
     m_frame_stack.push(m_frame);
     m_frame = new Frame();
@@ -225,18 +235,23 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
                 if (index >= m_tables[arguments.tableIndex].size())
                     throw Trap();
 
-                if (m_tables[arguments.tableIndex][index] == UINT32_MAX)
+                Reference reference = m_tables[arguments.tableIndex][index];
+
+                if (reference.index == UINT32_MAX)
                     throw Trap();
 
-                if (m_wasmFile.functionTypes[m_wasmFile.functionTypeIndexes[m_tables[arguments.tableIndex][index]]] != m_wasmFile.functionTypes[arguments.typeIndex])
+                if (m_wasmFile.functionTypes[m_wasmFile.functionTypeIndexes[reference.index]] != m_wasmFile.functionTypes[arguments.typeIndex])
                     throw Trap();
 
-                call_function(m_tables[arguments.tableIndex][index]);
+                call_function(reference.index);
                 break;
             }
             case Opcode::drop:
                 m_frame->stack.pop();
                 break;
+            case Opcode::select_typed:
+                // FIXME: Validate the types
+                [[fallthrough]];
             case Opcode::select_: {
                 uint32_t value = m_frame->stack.pop_as<uint32_t>();
 
@@ -261,6 +276,21 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
             case Opcode::global_set:
                 m_globals[std::get<uint32_t>(instruction.arguments)] = m_frame->stack.pop();
                 break;
+            case Opcode::table_get: {
+                uint32_t index = m_frame->stack.pop_as<uint32_t>();
+                if (index >= m_tables[std::get<uint32_t>(instruction.arguments)].size())
+                    throw Trap();
+                m_frame->stack.push(m_tables[std::get<uint32_t>(instruction.arguments)][index]);
+                break;
+            }
+            case Opcode::table_set: {
+                Reference value = m_frame->stack.pop_as<Reference>();
+                uint32_t index = m_frame->stack.pop_as<uint32_t>();
+                if (index >= m_tables[std::get<uint32_t>(instruction.arguments)].size())
+                    throw Trap();
+                m_tables[std::get<uint32_t>(instruction.arguments)][index] = value;
+                break;
+            }
             case Opcode::i32_load:
                 run_load_instruction<uint32_t, uint32_t>(std::get<MemArg>(instruction.arguments));
                 break;
@@ -335,16 +365,21 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
                 break;
             case Opcode::memory_grow: {
                 uint32_t addPages = m_frame->stack.pop_as<uint32_t>();
-                m_frame->stack.push(m_memory_size);
 
-                if (m_memory_size + addPages <= m_wasmFile.memories[0].limits.max)
+                if (m_memory_size + addPages > std::min(m_wasmFile.memories[0].limits.max, 65536u))
                 {
-                    uint8_t* newMemory = (uint8_t*)malloc((m_memory_size + addPages) * WASM_PAGE_SIZE);
-                    memcpy(newMemory, m_memory, std::min(m_memory_size * WASM_PAGE_SIZE, (m_memory_size + addPages) * WASM_PAGE_SIZE));
-                    free(m_memory);
-                    m_memory = newMemory;
-                    m_memory_size += addPages;
+                    m_frame->stack.push((uint32_t)-1);
+                    break;
                 }
+
+                m_frame->stack.push(m_memory_size);
+                uint32_t newSize = (m_memory_size + addPages) * WASM_PAGE_SIZE;
+                uint8_t* newMemory = (uint8_t*)malloc(newSize);
+                memset(newMemory, 0, newSize);
+                memcpy(newMemory, m_memory, std::min(m_memory_size * WASM_PAGE_SIZE, newSize));
+                free(m_memory);
+                m_memory = newMemory;
+                m_memory_size += addPages;
                 break;
             }
             case Opcode::i32_const:
@@ -657,10 +692,16 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
                 m_frame->stack.push((uint32_t)m_frame->stack.pop_as<uint64_t>());
                 break;
             case Opcode::i32_trunc_f32_s:
-                m_frame->stack.push((uint32_t)(int32_t)m_frame->stack.pop_as<float>());
+                run_unary_operation<float, operation_trunc<int32_t>>();
                 break;
             case Opcode::i32_trunc_f32_u:
-                m_frame->stack.push((uint32_t)m_frame->stack.pop_as<float>());
+                run_unary_operation<float, operation_trunc<uint32_t>>();
+                break;
+            case Opcode::i32_trunc_f64_s:
+                run_unary_operation<double, operation_trunc<int32_t>>();
+                break;
+            case Opcode::i32_trunc_f64_u:
+                run_unary_operation<double, operation_trunc<uint32_t>>();
                 break;
             case i64_extend_i32_s:
                 m_frame->stack.push((uint64_t)(int64_t)(int32_t)m_frame->stack.pop_as<uint32_t>());
@@ -668,23 +709,17 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
             case i64_extend_i32_u:
                 m_frame->stack.push((uint64_t)m_frame->stack.pop_as<uint32_t>());
                 break;
-            case Opcode::i32_trunc_f64_s:
-                m_frame->stack.push((uint32_t)(int32_t)m_frame->stack.pop_as<double>());
-                break;
-            case Opcode::i32_trunc_f64_u:
-                m_frame->stack.push((uint32_t)m_frame->stack.pop_as<double>());
-                break;
             case Opcode::i64_trunc_f32_s:
-                m_frame->stack.push((uint64_t)(int64_t)m_frame->stack.pop_as<float>());
+                run_unary_operation<float, operation_trunc<int64_t>>();
                 break;
             case Opcode::i64_trunc_f32_u:
-                m_frame->stack.push((uint64_t)m_frame->stack.pop_as<float>());
+                run_unary_operation<float, operation_trunc<uint64_t>>();
                 break;
             case Opcode::i64_trunc_f64_s:
-                m_frame->stack.push((uint64_t)(int64_t)m_frame->stack.pop_as<double>());
+                run_unary_operation<double, operation_trunc<int64_t>>();
                 break;
             case Opcode::i64_trunc_f64_u:
-                m_frame->stack.push((uint64_t)m_frame->stack.pop_as<double>());
+                run_unary_operation<double, operation_trunc<uint64_t>>();
                 break;
             case Opcode::f32_convert_i32_s:
                 m_frame->stack.push((float)(int32_t)m_frame->stack.pop_as<uint32_t>());
@@ -755,11 +790,34 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
                 m_frame->stack.push(default_value_for_type(std::get<Type>(instruction.arguments)));
                 break;
             case Opcode::ref_is_null:
-                m_frame->stack.push((uint32_t)(m_frame->stack.pop_as<FunctionRefrence>().functionIndex == UINT32_MAX));
+                m_frame->stack.push((uint32_t)(m_frame->stack.pop_as<Reference>().index == UINT32_MAX));
                 break;
             case Opcode::ref_func:
-                m_frame->stack.push((FunctionRefrence) { std::get<uint32_t>(instruction.arguments) });
+                m_frame->stack.push(Reference { ReferenceType::Function, std::get<uint32_t>(instruction.arguments) });
                 break;
+            case Opcode::memory_init: {
+                uint32_t count = m_frame->stack.pop_as<uint32_t>();
+                uint32_t source = m_frame->stack.pop_as<uint32_t>();
+                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+
+                const Data& data = m_wasmFile.dataBlocks[std::get<uint32_t>(instruction.arguments)];
+
+                if ((uint64_t)source + count > data.data.size())
+                    throw Trap();
+
+                if ((uint64_t)destination + count > m_memory_size * WASM_PAGE_SIZE)
+                    throw Trap();
+
+                memcpy(m_memory + destination, data.data.data() + source, count);
+                break;
+            }
+            case Opcode::data_drop: {
+                Data& data = m_wasmFile.dataBlocks[std::get<uint32_t>(instruction.arguments)];
+                data.type = UINT32_MAX;
+                data.expr.clear();
+                data.data.clear();
+                break;
+            }
             case Opcode::memory_copy: {
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
@@ -780,6 +838,48 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
                     throw Trap();
                 
                 memset(m_memory + destination, val, count);
+                break;
+            }
+            case Opcode::table_grow: {
+                uint32_t addEntries = m_frame->stack.pop_as<uint32_t>();
+
+                std::vector<Reference>& table = m_tables[std::get<uint32_t>(instruction.arguments)];
+                uint32_t oldSize = table.size();
+
+                Reference value = m_frame->stack.pop_as<Reference>();
+
+                if (table.size() + addEntries <= m_wasmFile.tables[std::get<uint32_t>(instruction.arguments)].limits.max)
+                {
+                    if (addEntries >= 0)
+                    {
+                        for (uint32_t i = 0; i < addEntries; i++)
+                            table.push_back(value);
+                    }
+                    else
+                    {
+                        assert(false);
+                        for (uint32_t i = 0; i < addEntries; i++)
+                            table.pop_back();
+                    }
+                }
+
+                m_frame->stack.push(oldSize);
+                break;
+            }
+            case Opcode::table_size:
+                m_frame->stack.push((uint32_t)m_tables[std::get<uint32_t>(instruction.arguments)].size());
+                break;
+            case Opcode::table_fill: {
+                uint32_t count = m_frame->stack.pop_as<uint32_t>();
+                Reference value = m_frame->stack.pop_as<Reference>();
+                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+                                
+                if (destination + count >= m_tables[std::get<uint32_t>(instruction.arguments)].size())
+                    throw Trap();
+
+                for (uint32_t i = 0; i < count; i++)
+                    m_tables[std::get<uint32_t>(instruction.arguments)][destination + i] = value;
+
                 break;
             }
             default:
@@ -811,7 +911,7 @@ std::vector<Value> VM::run_function_new_parser(const FunctionType& functionType,
 Value VM::run_bare_code_returning(std::vector<Instruction> instructions, Type returnType)
 {
     // clang-format off
-    std::vector<Value> values = run_function_new_parser({
+    std::vector<Value> values = run_function({
             .params = {},
             .returns = {(uint8_t)returnType},
         },
@@ -920,7 +1020,7 @@ void VM::call_function(uint32_t index)
         const auto& import = m_wasmFile.imports.at(index);
         if (import.environment == "wasi_snapshot_preview1")
         {
-            returnedValues = run_wasi_call(import.name, args);
+            returnedValues = WASI::run_wasi_call(import.name, args);
         }
         else
         {
@@ -935,113 +1035,4 @@ void VM::call_function(uint32_t index)
 
     for (const auto& returned : returnedValues)
         m_frame->stack.push(returned);
-}
-
-std::vector<Value> VM::run_wasi_call(const std::string& name, const std::vector<Value>& args)
-{
-    if (name == "clock_time_get")
-    {
-        /*
-        enum class ClockID : u32 {
-            Realtime,
-            Monotonic,
-            ProcessCPUTimeID,
-            ThreadCPUTimeID,
-        };
-        */
-
-        if (args.size() != 3)
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[0]))
-            throw Trap();
-
-        if (!std::holds_alternative<uint64_t>(args[1]))
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[2]))
-            throw Trap();
-
-        assert(std::get<uint32_t>(args[0]) == 0);
-        assert(std::get<uint64_t>(args[1]) == 1000);
-
-        struct timespec ts;
-        assert(clock_gettime(0, &ts) == 0);
-        uint64_t nanos = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-        memcpy(m_memory + std::get<uint32_t>(args[2]), &nanos, sizeof(nanos));
-
-        return { (uint32_t)0 };
-    }
-    else if (name == "fd_fdstat_get")
-    {
-        if (args.size() != 2)
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[0]))
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[1]))
-            throw Trap();
-
-        struct stat statBuffer;
-        fstat(std::get<uint32_t>(args[0]), &statBuffer);
-
-        WASI::FDStat fdStat {
-            .fs_filetype = WASI::file_type_from_stat(statBuffer),
-            .fs_flags = { 0 },
-            .fs_rights_base = { 0 },
-            .fs_rights_inheriting = { 0 },
-        };
-        memcpy(m_memory + std::get<uint32_t>(args[1]), &fdStat, sizeof(fdStat));
-
-        return { (uint32_t)0 };
-    }
-    else if (name == "fd_write")
-    {
-        if (args.size() != 4)
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[0]))
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[1]))
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[2]))
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[3]))
-            throw Trap();
-
-        uint32_t written = 0;
-
-        WASI::IOVector* iov = (WASI::IOVector*)(m_memory + std::get<uint32_t>(args[1]));
-
-        for (uint32_t i = 0; i < std::get<uint32_t>(args[2]); i++)
-            written += (uint32_t)write(std::get<uint32_t>(args[0]), (m_memory + iov[i].pointer), iov[i].length);
-        
-        memcpy(m_memory + std::get<uint32_t>(args[3]), &written, sizeof(written));
-
-        return { written };
-    }
-    else if (name == "random_get")
-    {
-        if (args.size() != 2)
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[0]))
-            throw Trap();
-
-        if (!std::holds_alternative<uint32_t>(args[1]))
-            throw Trap();
-
-        arc4random_buf(m_memory + std::get<uint32_t>(args[0]), std::get<uint32_t>(args[1]));
-
-        return { (uint32_t)0 };
-    }
-    else
-    {
-        fprintf(stderr, "Error: Invalid WASI call: %s\n", name.c_str());
-        throw Trap();
-    }
 }

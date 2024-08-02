@@ -25,13 +25,24 @@ struct Label
     LabelBeginType beginType;
 };
 
-struct FunctionRefrence
+enum class ReferenceType
 {
-    // FIXME: This should technically hold the function address, not index
-    uint32_t functionIndex;
+    Function,
+    Extern
 };
 
-typedef std::variant<uint32_t, uint64_t, float, double, FunctionRefrence, Label> Value;
+struct Reference
+{
+    ReferenceType type;
+    uint32_t index;
+
+    Reference(ReferenceType type, uint32_t index)
+        : type(type)
+        , index(index)
+    {
+    }
+};
+typedef std::variant<uint32_t, uint64_t, float, double, Reference, Label> Value;
 
 const char* get_value_variant_name_by_index(size_t index);
 
@@ -51,7 +62,7 @@ template <>
 extern const char* value_type_name<double>;
 
 template <>
-extern const char* value_type_name<FunctionRefrence>;
+extern const char* value_type_name<Reference>;
 
 template <>
 extern const char* value_type_name<Label>;
@@ -66,7 +77,7 @@ template <typename T>
 using ToValueType = typename __ToValueType<T>::type;
 
 template <typename T>
-concept IsValueType = IsAnyOf<ToValueType<T>, uint32_t, uint64_t, float, double, FunctionRefrence, Label>;
+concept IsValueType = IsAnyOf<ToValueType<T>, uint32_t, uint64_t, float, double, Reference, Label>;
 
 class ValueStack
 {

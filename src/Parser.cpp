@@ -90,6 +90,8 @@ std::vector<Instruction> parse(Stream& stream, const WasmFile& wasmFile)
             case Opcode::local_tee:
             case Opcode::global_get:
             case Opcode::global_set:
+            case Opcode::table_get:
+            case Opcode::table_set:
             case Opcode::ref_func:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_leb<uint32_t>() });
                 break;
@@ -104,6 +106,9 @@ std::vector<Instruction> parse(Stream& stream, const WasmFile& wasmFile)
                     .typeIndex = stream.read_leb<uint32_t>(),
                     .tableIndex = stream.read_leb<uint32_t>(),
                 }});
+                break;
+            case Opcode::select_typed:
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_vec<uint8_t>() });
                 break;
             case Opcode::i32_load:
             case Opcode::i64_load:
@@ -151,21 +156,46 @@ std::vector<Instruction> parse(Stream& stream, const WasmFile& wasmFile)
             }
             case Opcode::multi_byte1: {
                 MultiByte1 secondByte = (MultiByte1)stream.read_leb<uint32_t>();
+                Opcode realOpcode = (Opcode)((opcode << 8) | secondByte);
                 switch (secondByte)
                 {
+                    case MultiByte1::fc_memory_init: {
+                        uint32_t data = stream.read_leb<uint32_t>();
+                        if (stream.read_little_endian<uint8_t>() != 0)
+                            throw InvalidWASMException();
+
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = data });
+                        break;
+                    }
                     case MultiByte1::fc_memory_copy:
                         if (stream.read_little_endian<uint8_t>() != 0)
                             throw InvalidWASMException();
                         if (stream.read_little_endian<uint8_t>() != 0)
                             throw InvalidWASMException();
 
-                        instructions.push_back (Instruction { .opcode = Opcode::memory_copy });
+                        instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     case MultiByte1::fc_memory_fill:
                         if (stream.read_little_endian<uint8_t>() != 0)
                             throw InvalidWASMException();
 
-                        instructions.push_back (Instruction { .opcode = Opcode::memory_fill });
+                        instructions.push_back(Instruction { .opcode = realOpcode });
+                        break;
+                    case MultiByte1::fc_data_drop:
+                    case MultiByte1::fc_table_grow:
+                    case MultiByte1::fc_table_size:
+                    case MultiByte1::fc_table_fill:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = stream.read_leb<uint32_t>() });
+                        break;
+                    case MultiByte1::fc_i32_trunc_sat_f32_s:
+                    case MultiByte1::fc_i32_trunc_sat_f32_u:
+                    case MultiByte1::fc_i32_trunc_sat_f64_s:
+                    case MultiByte1::fc_i32_trunc_sat_f64_u:
+                    case MultiByte1::fc_i64_trunc_sat_f32_s:
+                    case MultiByte1::fc_i64_trunc_sat_f32_u:
+                    case MultiByte1::fc_i64_trunc_sat_f64_s:
+                    case MultiByte1::fc_i64_trunc_sat_f64_u:
+                        instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     default:
                         fprintf(stderr, "Error: Unknown opcode 0x%x %d\n", opcode, secondByte);

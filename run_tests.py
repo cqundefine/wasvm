@@ -21,7 +21,9 @@ failed_to_load = 0
 
 crashes = []
 
-for filename in os.listdir("tests"):
+tests = os.listdir("tests")
+tests.sort()
+for filename in tests:
     if filename == "linking":
         continue
     if os.path.exists("tests/" + filename + "/" + filename + ".json"):
@@ -31,11 +33,11 @@ for filename in os.listdir("tests"):
             crashes.append(filename)
         else:
             data = json.loads(process.stdout.decode().splitlines()[-1])
-            # if data["passed"] == data["total"]:
-                # pass
+            if data["passed"] == data["total"]:
+                pass
                 # print(f'{filename:<30} {colored("all passed", GREEN)}')
-            # else:
-            print(f'{filename:<30} {data["total"]}/{colored(data["passed"], GREEN)}/{colored(data["failed"], RED)}/{colored(data["skipped"], YELLOW)}/{colored(data["failed_to_load"], DARK_RED)}')
+            else:
+                print(f'{filename:<30} {data["total"]}/{colored(data["passed"], GREEN)}/{colored(data["failed"], RED)}/{colored(data["skipped"], YELLOW)}/{colored(data["failed_to_load"], DARK_RED)}')
             total += data["total"]
             passed += data["passed"]
             failed += data["failed"]

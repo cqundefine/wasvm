@@ -134,6 +134,7 @@ struct Code
 
 struct Data
 {
+    uint32_t type;
     std::vector<Instruction> expr;
     std::vector<uint8_t> data;
 
@@ -149,6 +150,7 @@ struct WasmFile
     std::vector<Memory> memories;
     std::vector<Global> globals;
     std::vector<Export> exports;
+    uint32_t startFunction = UINT32_MAX;
     std::vector<Element> elements;
     std::map<uint32_t, Code> codeBlocks;
     std::vector<Data> dataBlocks;

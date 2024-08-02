@@ -18,3 +18,4 @@ constexpr uint8_t EMPTY_TYPE = 0x40;
 bool is_valid_type(uint8_t type);
 Value default_value_for_type(uint8_t type);
 Type get_value_type(Value value);
+ReferenceType get_reference_type_from_reftype(uint8_t type);

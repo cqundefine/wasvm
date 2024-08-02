@@ -118,13 +118,12 @@ Element Element::read_from_stream(Stream& stream)
     else if (type == 2)
     {
         uint32_t table = stream.read_leb<uint32_t>();
-
+        std::vector<Instruction> expr = parse(stream, *s_currentWasmFile);
         stream.read_little_endian<uint8_t>();
-
         return {
             .type = type,
             .table = table,
-            .expr = parse(stream, *s_currentWasmFile),
+            .expr = expr,
             .functionIndexes = stream.read_vec<uint32_t>(),
         };
     }
@@ -159,16 +158,28 @@ Code Code::read_from_stream(Stream& stream)
 Data Data::read_from_stream(Stream& stream)
 {
     uint32_t type = stream.read_leb<uint32_t>();
-    if (type != 0)
+    if (type == 0)
+    {
+        return {
+            .type = type,
+            .expr = parse(stream, *s_currentWasmFile),
+            .data = stream.read_vec<uint8_t>(),
+        };
+    }
+    else if (type == 1)
+    {
+        return {
+            .type = type,
+            .expr = {},
+            .data = stream.read_vec<uint8_t>(),
+        };
+    }
+    else
     {
         fprintf(stderr, "Unsupported data type: %d\n", type);
         throw InvalidWASMException();
     }
 
-    return {
-        .expr = parse(stream, *s_currentWasmFile),
-        .data = stream.read_vec<uint8_t>(),
-    };
 }
 
 WasmFile WasmFile::read_from_stream(Stream& stream)
@@ -236,6 +247,10 @@ WasmFile WasmFile::read_from_stream(Stream& stream)
         {
             wasm.exports = sectionStream.read_vec<Export>();
         }
+        else if (tag == StartSection)
+        {
+            wasm.startFunction = sectionStream.read_leb<uint32_t>();
+        }
         else if (tag == ElementSection)
         {
             wasm.elements = sectionStream.read_vec<Element>();
@@ -247,6 +262,10 @@ WasmFile WasmFile::read_from_stream(Stream& stream)
         else if (tag == DataSection)
         {
             wasm.dataBlocks = sectionStream.read_vec<Data>();
+        }
+        else if (tag == DataCountSection)
+        {
+            // Ignore it...
         }
         else
         {
