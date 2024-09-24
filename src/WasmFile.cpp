@@ -56,18 +56,51 @@ Import Import::read_from_stream(Stream& stream)
     std::string environment = stream.read_typed<std::string>();
     std::string name = stream.read_typed<std::string>();
 
-    uint8_t byte = stream.read_leb<uint8_t>();
-    if (byte != 0)
+    uint8_t type = stream.read_leb<uint8_t>();
+    if (type == 0)
     {
-        fprintf(stderr, "Error: Invalid import type: %d\n", byte);
+        return Import {
+            .type = ImportType::Function,
+            .environment = environment,
+            .name = name,
+            .functionIndex = stream.read_leb<uint32_t>(),
+        };
+    }
+    else if (type == 1)
+    {
+        return Import {
+            .type = ImportType::Table,
+            .environment = environment,
+            .name = name,
+            .tableRefType = stream.read_leb<uint8_t>(),
+            .tableLimits = stream.read_typed<Limits>(),
+        };
+    }
+    else if (type == 2)
+    {
+        return Import {
+            .type = ImportType::Memory,
+            .environment = environment,
+            .name = name,
+            .memoryLimits = stream.read_typed<Limits>(),
+        };
+
+    }
+    else if (type == 3)
+    {
+        return Import {
+            .type = ImportType::Global,
+            .environment = environment,
+            .name = name,
+            .globalType = stream.read_leb<uint8_t>(),
+            .globalMut = stream.read_leb<uint8_t>(),
+        };
+    }
+    else
+    {
+        fprintf(stderr, "Error: Invalid import type: %d\n", type);
         throw InvalidWASMException();
     }
-
-    return {
-        .environment = environment,
-        .name = name,
-        .index = stream.read_leb<uint32_t>(),
-    };
 }
 
 Table Table::read_from_stream(Stream& stream)
@@ -111,8 +144,19 @@ Element Element::read_from_stream(Stream& stream)
     {
         return {
             .type = type,
+            .table = 0,
             .expr = parse(stream, *s_currentWasmFile),
             .functionIndexes = stream.read_vec<uint32_t>(),
+            .mode = ElementMode::Active,
+        };
+    }
+    else if (type == 1)
+    {
+        stream.read_leb<uint8_t>();
+        return Element {
+            .type = type,
+            .functionIndexes = stream.read_vec<uint32_t>(),
+            .mode = ElementMode::Passive,
         };
     }
     else if (type == 2)
@@ -125,6 +169,16 @@ Element Element::read_from_stream(Stream& stream)
             .table = table,
             .expr = expr,
             .functionIndexes = stream.read_vec<uint32_t>(),
+            .mode = ElementMode::Active,
+        };
+    }
+    else if (type == 3)
+    {
+        stream.read_leb<uint8_t>();
+        return Element {
+            .type = type,
+            .functionIndexes = stream.read_vec<uint32_t>(),
+            .mode = ElementMode::Declarative,
         };
     }
     else
@@ -227,11 +281,11 @@ WasmFile WasmFile::read_from_stream(Stream& stream)
         }
         else if (tag == FunctionSection)
         {
-            wasm.functionTypeIndexes = vector_to_map_offset(sectionStream.read_vec<uint32_t>(), wasm.imports.size());
+            wasm.functionTypeIndexes = vector_to_map_offset(sectionStream.read_vec<uint32_t>(), wasm.get_import_count_of_type(ImportType::Function));
         }
         else if (tag == TableSection)
         {
-            wasm.tables = sectionStream.read_vec<Table>();
+            wasm.tables = vector_to_map_offset(sectionStream.read_vec<Table>(), wasm.get_import_count_of_type(ImportType::Table));
         }
         else if (tag == MemorySection)
         {
@@ -241,7 +295,7 @@ WasmFile WasmFile::read_from_stream(Stream& stream)
         }
         else if (tag == GlobalSection)
         {
-            wasm.globals = sectionStream.read_vec<Global>();
+            wasm.globals = vector_to_map_offset(sectionStream.read_vec<Global>(), wasm.get_import_count_of_type(ImportType::Global));
         }
         else if (tag == ExportSection)
         {
@@ -257,7 +311,7 @@ WasmFile WasmFile::read_from_stream(Stream& stream)
         }
         else if (tag == CodeSection)
         {
-            wasm.codeBlocks = vector_to_map_offset(sectionStream.read_vec<Code>(), wasm.imports.size());
+            wasm.codeBlocks = vector_to_map_offset(sectionStream.read_vec<Code>(), wasm.get_import_count_of_type(ImportType::Function));
         }
         else if (tag == DataSection)
         {
@@ -287,6 +341,16 @@ Export WasmFile::find_export_by_name(const std::string& name)
 
     fprintf(stderr, "Error: Tried to find a non existent export: %s\n", name.c_str());
     throw Trap();
+}
+
+uint32_t WasmFile::get_import_count_of_type(ImportType type)
+{
+    uint32_t count = 0;
+    for (const auto& import : imports)
+        if (import.type == type)
+            count++;
+    return count;
+
 }
 
 BlockType BlockType::read_from_stream(Stream& stream)

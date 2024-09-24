@@ -50,7 +50,7 @@ int main(int argc, char** argv)
         FileStream fileStream(argv[1]);
         WasmFile file = WasmFile::read_from_stream(fileStream);
 
-        VM::bootup(file);
+        VM::load_module(file);
 
         std::vector<Value> returnValues = VM::run_function(parser.get("-f"), {});
 

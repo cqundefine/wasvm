@@ -181,7 +181,14 @@ std::vector<Instruction> parse(Stream& stream, const WasmFile& wasmFile)
 
                         instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
+                    case MultiByte1::fc_table_init:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = TableInitArguments { .elementIndex = stream.read_leb<uint32_t>(), .tableIndex = stream.read_leb<uint32_t>() }});
+                        break;
+                    case MultiByte1::fc_table_copy:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = TableCopyArguments { .destination = stream.read_leb<uint32_t>(), .source = stream.read_leb<uint32_t>() }});
+                        break;
                     case MultiByte1::fc_data_drop:
+                    case MultiByte1::fc_elem_drop:
                     case MultiByte1::fc_table_grow:
                     case MultiByte1::fc_table_size:
                     case MultiByte1::fc_table_fill:

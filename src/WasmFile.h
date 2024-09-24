@@ -64,11 +64,30 @@ struct FunctionType
     }
 };
 
+enum class ImportType
+{
+    Function,
+    Table,
+    Memory,
+    Global
+};
+
 struct Import
 {
+    ImportType type;
     std::string environment;
     std::string name;
-    uint32_t index;
+
+    // FIXME: Make this a union
+    uint32_t functionIndex;
+
+    uint8_t tableRefType;
+    Limits tableLimits;
+
+    Limits memoryLimits;
+
+    uint8_t globalType;
+    uint8_t globalMut;
 
     static Import read_from_stream(Stream& stream);
 };
@@ -106,12 +125,20 @@ struct Export
     static Export read_from_stream(Stream& stream);
 };
 
+enum class ElementMode
+{
+    Passive,
+    Active,
+    Declarative
+};
+
 struct Element
 {
     uint32_t type;
     uint32_t table;
     std::vector<Instruction> expr;
     std::vector<uint32_t> functionIndexes;
+    ElementMode mode;
 
     static Element read_from_stream(Stream& stream);
 };
@@ -146,9 +173,9 @@ struct WasmFile
     std::vector<FunctionType> functionTypes;
     std::vector<Import> imports;
     std::map<uint32_t, uint32_t> functionTypeIndexes;
-    std::vector<Table> tables;
+    std::map<uint32_t, Table> tables;
     std::vector<Memory> memories;
-    std::vector<Global> globals;
+    std::map<uint32_t, Global> globals;
     std::vector<Export> exports;
     uint32_t startFunction = UINT32_MAX;
     std::vector<Element> elements;
@@ -158,6 +185,8 @@ struct WasmFile
     static WasmFile read_from_stream(Stream& stream);
 
     Export find_export_by_name(const std::string& name);
+
+    uint32_t get_import_count_of_type(ImportType type);
 };
 
 struct BlockType

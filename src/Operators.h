@@ -3,6 +3,7 @@
 #include <bit>
 #include <cassert>
 #include <cmath>
+#include <Util.h>
 #include <Value.h>
 
 #define GENERIC_BINARY_OPERATION_OPERATOR(name, op) \
@@ -36,8 +37,6 @@ GENERIC_BINARY_OPERATION_OPERATOR(shl, <<);
 GENERIC_BINARY_OPERATION_OPERATOR(shr, >>);
 GENERIC_BINARY_OPERATION_FUNCTION(rotl, std::rotl);
 GENERIC_BINARY_OPERATION_FUNCTION(rotr, std::rotr);
-GENERIC_BINARY_OPERATION_FUNCTION(min, std::min);
-GENERIC_BINARY_OPERATION_FUNCTION(max, std::max);
 GENERIC_BINARY_OPERATION_FUNCTION(copysign, std::copysign);
 GENERIC_COMPARISON_OPERATION_OPERATOR(eq, ==);
 GENERIC_COMPARISON_OPERATION_OPERATOR(ne, !=);
@@ -45,6 +44,34 @@ GENERIC_COMPARISON_OPERATION_OPERATOR(lt, <);
 GENERIC_COMPARISON_OPERATION_OPERATOR(gt, >);
 GENERIC_COMPARISON_OPERATION_OPERATOR(le, <=);
 GENERIC_COMPARISON_OPERATION_OPERATOR(ge, >=);
+
+template <typename LhsType, typename RhsType>
+Value operation_min(LhsType a, RhsType b)
+{
+    static_assert(std::is_floating_point<LhsType>() && std::is_floating_point<RhsType>(), "Opeartion min only supports floating point");
+
+    if (std::isnan(a))
+        return typed_nan<ToValueType<LhsType>>();
+
+    if (std::isnan(b))
+        return typed_nan<ToValueType<LhsType>>();
+
+    return (ToValueType<LhsType>)std::min(a, b);
+}
+
+template <typename LhsType, typename RhsType>
+Value operation_max(LhsType a, RhsType b)
+{
+    static_assert(std::is_floating_point<LhsType>() && std::is_floating_point<RhsType>(), "Opeartion max only supports floating point");
+
+    if (std::isnan(a))
+        return typed_nan<ToValueType<LhsType>>();
+
+    if (std::isnan(b))
+        return typed_nan<ToValueType<LhsType>>();
+
+    return (ToValueType<LhsType>)std::max(a, b);
+}
 
 template <typename LhsType, typename RhsType>
 Value operation_div(LhsType a, RhsType b)
@@ -109,7 +136,36 @@ Value operation_trunc(T a)
 
     a = std::trunc(a);
 
-    // FIXME: Check the limits
+    if (a < (std::is_signed<TruncatedType>() ? (-1 * std::pow(2.0, (sizeof(TruncatedType) * 8 - 1))) : 0))
+        throw Trap();
+
+    if (a > std::pow(2.0, (sizeof(TruncatedType) * 8 - std::is_signed<TruncatedType>())) - 1)
+        throw Trap();
+
+    return (ToValueType<TruncatedType>)(TruncatedType)a;
+}
+
+template <typename TruncatedType, typename T>
+Value operation_trunc_sat(T a)
+{
+    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "run_truncate_instruction is meant for floating point to integer conversions");
+    
+    if (std::isnan(a))
+        return (ToValueType<TruncatedType>)0;
+    
+    if (std::isinf(a) && a < 0)
+        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().min();
+
+    if (std::isinf(a) && a > 0)
+        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().max();
+
+    a = std::trunc(a);
+
+    if (a < (std::is_signed<TruncatedType>() ? (-1 * std::pow(2.0, (sizeof(TruncatedType) * 8 - 1))) : 0))
+        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().min();
+
+    if (a > std::pow(2.0, (sizeof(TruncatedType) * 8 - std::is_signed<TruncatedType>())) - 1)
+        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().max();
 
     return (ToValueType<TruncatedType>)(TruncatedType)a;
 }

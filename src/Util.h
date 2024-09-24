@@ -4,6 +4,7 @@
 #include <FileStream.h>
 #include <sys/time.h>
 #include <map>
+#include <cmath>
 #include <vector>
 
 #if defined(__linux__)
@@ -40,4 +41,15 @@ std::map<uint32_t, T> vector_to_map_offset(const std::vector<T>& vector, uint32_
         map[i + offset] = vector.at(i);
     }
     return map;
+}
+
+template <std::floating_point T>
+T typed_nan()
+{
+    if constexpr(std::is_same<T, float>())
+        return std::nanf("");
+    else if constexpr(std::is_same<T, double>())
+        return std::nan("");
+    else
+        static_assert(false, "Unsupported type of NaN");
 }

@@ -134,7 +134,7 @@ public:
         char* arr = (char*)malloc(size + 1);
         read((void*)arr, size);
         arr[size] = 0;
-        return std::string(arr);
+        return std::string(arr, size);
     }
 
     template <typename T>

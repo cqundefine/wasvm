@@ -34,6 +34,18 @@ struct CallIndirectArguments
     uint32_t tableIndex;
 };
 
+struct TableInitArguments
+{
+    uint32_t elementIndex;
+    uint32_t tableIndex;
+};
+
+struct TableCopyArguments
+{
+    uint32_t destination;
+    uint32_t source;
+};
+
 struct NoneArguments
 {
 
@@ -42,7 +54,7 @@ struct NoneArguments
 struct Instruction
 {
     Opcode opcode;
-    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, std::vector<uint8_t>, MemArg, Type, Label, uint32_t, uint64_t, float, double> arguments;
+    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, TableInitArguments, TableCopyArguments, std::vector<uint8_t>, MemArg, Type, Label, uint32_t, uint64_t, float, double> arguments;
 };
 
 std::vector<Instruction> parse(Stream& stream, const WasmFile& wasmFile);
