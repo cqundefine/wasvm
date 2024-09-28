@@ -1,27 +1,36 @@
 #include <Type.h>
+#include <WasmFile.h>
 #include <cassert>
 #include <cstdio>
 
-bool is_valid_type(uint8_t t)
+Type read_type_from_stream(Stream& stream)
 {
-    return t == i32 || t == i64 || t == f32 || t == f64 || t == funcref || t == externref;
+    Type t = (Type)stream.read_leb<uint32_t>();
+    if (!is_valid_type(t))
+        throw WasmFile::InvalidWASMException();
+    return t;
 }
 
-Value default_value_for_type(uint8_t type)
+bool is_valid_type(Type t)
+{
+    return t == Type::i32 || t == Type::i64 || t == Type::f32 || t == Type::f64 || t == Type::funcref || t == Type::externref;
+}
+
+Value default_value_for_type(Type type)
 {
     switch (type)
     {
-        case i32:
+        case Type::i32:
             return (uint32_t)0;
-        case i64:
+        case Type::i64:
             return (uint64_t)0;
-        case f32:
+        case Type::f32:
             return (float)0.0f;
-        case f64:
+        case Type::f64:
             return (double)0.0;
-        case funcref:
+        case Type::funcref:
             return Reference { ReferenceType::Function, UINT32_MAX };
-        case externref:
+        case Type::externref:
             return Reference { ReferenceType::Extern, UINT32_MAX };
         default:
             throw Trap();
@@ -57,7 +66,7 @@ Type get_value_type(Value value)
     throw Trap();
 }
 
-ReferenceType get_reference_type_from_reftype(uint8_t type)
+ReferenceType get_reference_type_from_reftype(Type type)
 {
     if (type == Type::funcref)
         return ReferenceType::Function;

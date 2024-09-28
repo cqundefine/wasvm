@@ -94,15 +94,15 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, 
     }
     else if (actionType == "get")
     {
-        VM::Module* mod;
+        Ref<Module> mod;
         if (action.contains("module"))
             mod = VM::get_registered_module(action["module"]);
         else
             mod = VM::current_module();
         
-        Export exp = mod->wasmFile.find_export_by_name(action["field"]);
-        assert(exp.type == 3);
-        return { mod->globals[exp.index] };
+        WasmFile::Export exp = mod->wasmFile->find_export_by_name(action["field"]);
+        assert(exp.type == WasmFile::ImportType::Global);
+        return { mod->globals[exp.index]->value };
     }
     else
     {
@@ -120,12 +120,14 @@ TestStats run_tests(const char* path)
     chdir("tests");
 
     FileStream specTestStream("spectest.wasm");
-    WasmFile specTest = WasmFile::read_from_stream(specTestStream);
+    auto specTest = WasmFile::WasmFile::read_from_stream(specTestStream);
     VM::load_module(specTest);
-    VM::register_module("spectest");
+    VM::register_module("spectest", VM::current_module());
 
     chdir(path);
-    std::ifstream f(path + std::string(".json"));
+
+    std::filesystem::path fsPath(path);
+    std::ifstream f(fsPath.filename().string() + ".json");
     nlohmann::json data = nlohmann::json::parse(f);
 
     bool module_loaded = false;
@@ -137,16 +139,15 @@ TestStats run_tests(const char* path)
         if (type == "module")
         {
             FileStream fileStream(command["filename"].get<std::string>().c_str());
-            WasmFile file;
             try
             {
-                WasmFile file = WasmFile::read_from_stream(fileStream);
+                auto file = WasmFile::WasmFile::read_from_stream(fileStream);
                 VM::load_module(file);
                 if (command.contains("name"))
-                    VM::register_module(command["name"]);
+                    VM::register_module(command["name"], VM::current_module());
                 module_loaded = true;
             }
-            catch (InvalidWASMException e)
+            catch (WasmFile::InvalidWASMException e)
             {
                 printf("%s/%u module failed to load\n", path, line);
                 module_loaded = false;
@@ -159,7 +160,10 @@ TestStats run_tests(const char* path)
         }
         else if (type == "register")
         {
-            VM::register_module(command["as"]);
+            if (command.contains("name"))
+                VM::register_module(command["as"], VM::get_registered_module(command["name"]));
+            else
+                VM::register_module(command["as"], VM::current_module());
         }
         else if (type == "action")
         {
@@ -210,10 +214,6 @@ TestStats run_tests(const char* path)
             }
 
             bool failed = false;
-
-            const auto& action = command["action"];
-            std::string actionType = action["type"];
-            
 
             std::vector<Value> returnValues;
             try
@@ -420,7 +420,7 @@ TestStats run_tests(const char* path)
         }
         else
         {
-            printf("command type unsupported: %s\n", type.c_str());
+            // printf("command type unsupported: %s\n", type.c_str());
         }
     }
 

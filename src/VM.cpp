@@ -15,68 +15,114 @@
 #include <unistd.h>
 #include <Util.h>
 
-void VM::load_module(WasmFile& file)
+void VM::load_module(Ref<WasmFile::WasmFile> file)
 {
-    m_current_module = new Module();
+    m_current_module = MakeRef<Module>();
     m_current_module->wasmFile = file;
 
-    for (const auto& [index, global] : file.globals)
+    for (const auto& import : m_current_module->wasmFile->imports)
     {
-        // FIXME: verify type
-        m_current_module->globals[index] = run_bare_code_returning(m_current_module, global.initCode, (Type)global.type);
-    }
-
-    if (file.memories.size() > 0)
-    {
-        m_current_module->memory.size = file.memories.at(0).limits.min;
-        m_current_module->memory.max = file.memories.at(0).limits.max;
-        m_current_module->memory.data = (uint8_t*)malloc(m_current_module->memory.size * WASM_PAGE_SIZE);
-        memset(m_current_module->memory.data, 0, m_current_module->memory.size * WASM_PAGE_SIZE);
-    }
-
-    for (const auto& data : file.dataBlocks)
-    {
-        if (data.type == 0)
+        ImportLocation location = find_import(import.environment, import.name, import.type);
+        switch(import.type)
         {
-            Value beginValue = run_bare_code_returning(m_current_module, data.expr, i32);
-            assert(std::holds_alternative<uint32_t>(beginValue));
-            uint32_t begin = std::get<uint32_t>(beginValue);
-
-            memcpy(get_memory(m_current_module).data + begin, data.data.data(), data.data.size());
+            case WasmFile::ImportType::Function:
+                // Functions are handled differently
+                break;
+            case WasmFile::ImportType::Table:
+                m_current_module->tables.push_back(location.module->tables[location.index]);
+                break;
+            case WasmFile::ImportType::Memory:
+                m_current_module->memories.push_back(location.module->memories[location.index]);
+                break;
+            case WasmFile::ImportType::Global:
+                m_current_module->globals.push_back(location.module->globals[location.index]);
+                break;
+            default:
+                assert(false);
         }
     }
 
-    for (const auto& [index, table] : file.tables)
+    for (const auto& global : m_current_module->wasmFile->globals)
     {
-        assert(table.limits.min <= table.limits.max);
-        std::vector<Reference> tableVector;
-        tableVector.reserve(table.limits.min);
-        for (uint32_t i = 0; i < table.limits.min; i++)
-            tableVector.push_back(Reference { get_reference_type_from_reftype(table.refType), UINT32_MAX });
-        m_current_module->tables.push_back(tableVector);
+        // FIXME: verify type
+        m_current_module->globals.push_back(MakeRef<Global>(run_bare_code_returning(m_current_module, global.initCode, global.type)));
     }
 
-    for (const auto& element : file.elements)
+    for (const auto& memoryInfo : m_current_module->wasmFile->memories)
     {
-        if (element.mode == ElementMode::Active)
+        auto memory = MakeRef<Memory>();
+        memory->size = memoryInfo.limits.min;
+        memory->max = memoryInfo.limits.max;
+        memory->data = (uint8_t*)malloc(memory->size * WASM_PAGE_SIZE);
+        memset(memory->data, 0, memory->size * WASM_PAGE_SIZE);
+        m_current_module->memories.push_back(memory);
+    }
+
+    for (auto& data : m_current_module->wasmFile->dataBlocks)
+    {
+        if (data.mode == WasmFile::ElementMode::Active)
         {
-            Value beginValue = run_bare_code_returning(m_current_module, element.expr, i32);
+            Value beginValue = run_bare_code_returning(m_current_module, data.expr, Type::i32);
+            assert(std::holds_alternative<uint32_t>(beginValue));
+            uint32_t begin = std::get<uint32_t>(beginValue);
+
+            // FIXME: Verify that this won't overflow
+            memcpy(m_current_module->memories[data.memoryIndex]->data + begin, data.data.data(), data.data.size());
+
+            data.type = UINT32_MAX;
+            data.expr.clear();
+            data.data.clear();
+        }
+    }
+
+    for (const auto& tableInfo : m_current_module->wasmFile->tables)
+    {
+        assert(tableInfo.limits.min <= tableInfo.limits.max);
+        auto table = MakeRef<Table>();
+        table->max = tableInfo.limits.max;
+        table->elements.reserve(tableInfo.limits.min);
+        for (uint32_t i = 0; i < tableInfo.limits.min; i++)
+            table->elements.push_back(Reference { get_reference_type_from_reftype(tableInfo.refType), UINT32_MAX });
+        m_current_module->tables.push_back(table);
+    }
+
+    for (auto& element : m_current_module->wasmFile->elements)
+    {
+        if (element.mode == WasmFile::ElementMode::Active)
+        {
+            Value beginValue = run_bare_code_returning(m_current_module, element.expr, Type::i32);
             assert(std::holds_alternative<uint32_t>(beginValue));
             uint32_t begin = std::get<uint32_t>(beginValue);
             for (size_t i = 0; i < element.functionIndexes.size(); i++)
             {
-                get_table(element.table, m_current_module)[begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i] };
+                if (element.functionIndexes.empty())
+                {
+                    Value reference = run_bare_code_returning(m_current_module, element.referencesExpr[i], Type::funcref);
+                    assert(std::holds_alternative<Reference>(reference));
+                    m_current_module->tables[element.table]->elements[begin + i] = std::get<Reference>(reference);
+                }
+                else
+                    m_current_module->tables[element.table]->elements[begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i] };
             }
+        }
+        
+        if (element.mode == WasmFile::ElementMode::Active || element.mode == WasmFile::ElementMode::Declarative)
+        {
+            element.type = UINT32_MAX;
+            element.table = UINT32_MAX;
+            element.expr.clear();
+            element.functionIndexes.clear();
+            element.referencesExpr.clear();
         }
     }
 
-    if (m_current_module->wasmFile.startFunction != UINT32_MAX)
-        run_function(m_current_module, m_current_module->wasmFile.startFunction, {});
+    if (m_current_module->wasmFile->startFunction != UINT32_MAX)
+        run_function(m_current_module, m_current_module->wasmFile->startFunction, {});
 }
 
-void VM::register_module(const std::string& name)
+void VM::register_module(const std::string& name, Ref<Module> module)
 {
-    m_registered_modules[name] = m_current_module;
+    m_registered_modules[name] = module;
 }
 
 std::vector<Value> VM::run_function(const std::string& name, const std::vector<Value>& args)
@@ -89,19 +135,19 @@ std::vector<Value> VM::run_function(const std::string& mod, const std::string& n
     return run_function(m_registered_modules[mod], name, args);
 }
 
-std::vector<Value> VM::run_function(Module* mod, const std::string& name, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(Ref<Module> mod, const std::string& name, const std::vector<Value>& args)
 {
-    Export functionExport = mod->wasmFile.find_export_by_name(name);
-    assert(functionExport.type == 0);
+    WasmFile::Export functionExport = mod->wasmFile->find_export_by_name(name);
+    assert(functionExport.type == WasmFile::ImportType::Function);
     return run_function(mod, functionExport.index, args);
 }
 
-std::vector<Value> VM::run_function(Module* mod, uint32_t index, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(Ref<Module> mod, uint32_t index, const std::vector<Value>& args)
 {
-    return run_function(mod, mod->wasmFile.functionTypes[mod->wasmFile.functionTypeIndexes[index]], mod->wasmFile.codeBlocks[index], args);
+    return run_function(mod, mod->wasmFile->functionTypes[mod->wasmFile->functionTypeIndexes[index]], mod->wasmFile->codeBlocks[index], args);
 }
 
-std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionType, const Code& code, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(Ref<Module> mod, const WasmFile::FunctionType& functionType, const WasmFile::Code& code, const std::vector<Value>& args)
 {
     m_frame_stack.push(m_frame);
     m_frame = new Frame(mod);
@@ -224,17 +270,17 @@ std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionTyp
 
                 uint32_t index = m_frame->stack.pop_as<uint32_t>();
 
-                auto& table = get_table(arguments.tableIndex, mod);
+                auto table = mod->tables[arguments.tableIndex];
 
-                if (index >= table.size())
+                if (index >= table->elements.size())
                     throw Trap();
 
-                Reference reference = table[index];
+                Reference reference = table->elements[index];
 
                 if (reference.index == UINT32_MAX)
                     throw Trap();
 
-                if (mod->wasmFile.functionTypes[mod->wasmFile.functionTypeIndexes[reference.index]] != mod->wasmFile.functionTypes[arguments.typeIndex])
+                if (mod->wasmFile->functionTypes[mod->wasmFile->functionTypeIndexes[reference.index]] != mod->wasmFile->functionTypes[arguments.typeIndex])
                     throw Trap();
 
                 call_function(reference.index);
@@ -265,117 +311,117 @@ std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionTyp
                 m_frame->locals[std::get<uint32_t>(instruction.arguments)] = m_frame->stack.peek();
                 break;
             case Opcode::global_get:
-                m_frame->stack.push(get_global(std::get<uint32_t>(instruction.arguments), mod));
+                m_frame->stack.push(mod->globals[std::get<uint32_t>(instruction.arguments)]->value);
                 break;
             case Opcode::global_set:
-                get_global(std::get<uint32_t>(instruction.arguments), mod) = m_frame->stack.pop();
+                mod->globals[std::get<uint32_t>(instruction.arguments)]->value = m_frame->stack.pop();
                 break;
             case Opcode::table_get: {
                 uint32_t index = m_frame->stack.pop_as<uint32_t>();
-                if (index >= mod->tables[std::get<uint32_t>(instruction.arguments)].size())
+                if (index >= mod->tables[std::get<uint32_t>(instruction.arguments)]->elements.size())
                     throw Trap();
-                m_frame->stack.push(mod->tables[std::get<uint32_t>(instruction.arguments)][index]);
+                m_frame->stack.push(mod->tables[std::get<uint32_t>(instruction.arguments)]->elements[index]);
                 break;
             }
             case Opcode::table_set: {
                 Reference value = m_frame->stack.pop_as<Reference>();
                 uint32_t index = m_frame->stack.pop_as<uint32_t>();
-                if (index >= mod->tables[std::get<uint32_t>(instruction.arguments)].size())
+                if (index >= mod->tables[std::get<uint32_t>(instruction.arguments)]->elements.size())
                     throw Trap();
-                mod->tables[std::get<uint32_t>(instruction.arguments)][index] = value;
+                mod->tables[std::get<uint32_t>(instruction.arguments)]->elements[index] = value;
                 break;
             }
             case Opcode::i32_load:
-                run_load_instruction<uint32_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<uint32_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_load:
-                run_load_instruction<uint64_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<uint64_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::f32_load:
-                run_load_instruction<float, float>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<float, float>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::f64_load:
-                run_load_instruction<double, double>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<double, double>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i32_load8_s:
-                run_load_instruction<int8_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<int8_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i32_load8_u:
-                run_load_instruction<uint8_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<uint8_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i32_load16_s:
-                run_load_instruction<int16_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<int16_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i32_load16_u:
-                run_load_instruction<uint16_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<uint16_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_load8_s:
-                run_load_instruction<int8_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<int8_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_load8_u:
-                run_load_instruction<uint8_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<uint8_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_load16_s:
-                run_load_instruction<int16_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<int16_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_load16_u:
-                run_load_instruction<uint16_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<uint16_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_load32_s:
-                run_load_instruction<int32_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<int32_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_load32_u:
-                run_load_instruction<uint32_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_load_instruction<uint32_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i32_store:
-                run_store_instruction<uint32_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<uint32_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_store:
-                run_store_instruction<uint64_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<uint64_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::f32_store:
-                run_store_instruction<float, float>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<float, float>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::f64_store:
-                run_store_instruction<double, double>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<double, double>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i32_store8:
-                run_store_instruction<uint8_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<uint8_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i32_store16:
-                run_store_instruction<uint16_t, uint32_t>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<uint16_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_store8:
-                run_store_instruction<uint8_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<uint8_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_store16:
-                run_store_instruction<uint16_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<uint16_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::i64_store32:
-                run_store_instruction<uint32_t, uint64_t>(std::get<MemArg>(instruction.arguments));
+                run_store_instruction<uint32_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::memory_size:
-                m_frame->stack.push(get_memory(mod).size);
+                m_frame->stack.push(mod->memories[std::get<uint32_t>(instruction.arguments)]->size);
                 break;
             case Opcode::memory_grow: {
-                auto& memory = get_memory(mod);
+                auto& memory = mod->memories[std::get<uint32_t>(instruction.arguments)];
 
                 uint32_t addPages = m_frame->stack.pop_as<uint32_t>();
 
-                if (memory.size + addPages > std::min(memory.max, 65536u))
+                if (memory->size + addPages > std::min(memory->max, 65536u))
                 {
                     m_frame->stack.push((uint32_t)-1);
                     break;
                 }
 
-                m_frame->stack.push(memory.size);
-                uint32_t newSize = (memory.size + addPages) * WASM_PAGE_SIZE;
+                m_frame->stack.push(memory->size);
+                uint32_t newSize = (memory->size + addPages) * WASM_PAGE_SIZE;
                 uint8_t* newMemory = (uint8_t*)malloc(newSize);
                 memset(newMemory, 0, newSize);
-                memcpy(newMemory, memory.data, std::min(memory.size * WASM_PAGE_SIZE, newSize));
-                free(memory.data);
-                memory.data = newMemory;
-                memory.size += addPages;
+                memcpy(newMemory, memory->data, std::min(memory->size * WASM_PAGE_SIZE, newSize));
+                free(memory->data);
+                memory->data = newMemory;
+                memory->size += addPages;
                 break;
             }
             case Opcode::i32_const:
@@ -816,54 +862,57 @@ std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionTyp
                 run_unary_operation<double, operation_trunc_sat<uint64_t>>();
                 break;
             case Opcode::memory_init: {
-                auto& memory = get_memory(mod);
+                const MemoryInitArguments& arguments = std::get<MemoryInitArguments>(instruction.arguments);
+                auto& memory = mod->memories[arguments.memoryIndex];
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                const Data& data = mod->wasmFile.dataBlocks[std::get<uint32_t>(instruction.arguments)];
+                const WasmFile::Data& data = mod->wasmFile->dataBlocks[arguments.dataIndex];
 
                 if ((uint64_t)source + count > data.data.size())
                     throw Trap();
 
-                if ((uint64_t)destination + count > memory.size * WASM_PAGE_SIZE)
+                if ((uint64_t)destination + count > memory->size * WASM_PAGE_SIZE)
                     throw Trap();
 
-                memcpy(memory.data + destination, data.data.data() + source, count);
+                memcpy(memory->data + destination, data.data.data() + source, count);
                 break;
             }
             case Opcode::data_drop: {
-                Data& data = mod->wasmFile.dataBlocks[std::get<uint32_t>(instruction.arguments)];
+                WasmFile::Data& data = mod->wasmFile->dataBlocks[std::get<uint32_t>(instruction.arguments)];
                 data.type = UINT32_MAX;
                 data.expr.clear();
                 data.data.clear();
                 break;
             }
             case Opcode::memory_copy: {
-                auto& memory = get_memory(mod);
+                const MemoryCopyArguments& arguments = std::get<MemoryCopyArguments>(instruction.arguments);
+                auto& sourceMemory = mod->memories[arguments.source];
+                auto& destinationMemory = mod->memories[arguments.destination];
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                if ((uint64_t)source + count > memory.size * WASM_PAGE_SIZE || (uint64_t)destination + count > memory.size * WASM_PAGE_SIZE)
+                if ((uint64_t)source + count > sourceMemory->size * WASM_PAGE_SIZE || (uint64_t)destination + count > destinationMemory->size * WASM_PAGE_SIZE)
                     throw Trap();
 
-                memcpy(memory.data + destination, memory.data + source, count);
+                memcpy(sourceMemory->data + destination, destinationMemory->data + source, count);
                 break;
             }
             case Opcode::memory_fill: {
-                auto& memory = get_memory(mod);
+                auto& memory = mod->memories[std::get<uint32_t>(instruction.arguments)];
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t val = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                if ((uint64_t)destination + count > memory.size * WASM_PAGE_SIZE)
+                if ((uint64_t)destination + count > memory->size * WASM_PAGE_SIZE)
                     throw Trap();
                 
-                memset(memory.data + destination, val, count);
+                memset(memory->data + destination, val, count);
                 break;
             }
             case Opcode::table_init: {
@@ -872,21 +921,22 @@ std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionTyp
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                auto& table = get_table(arguments.tableIndex, mod);
+                auto& table = mod->tables[arguments.tableIndex];
 
-                if ((uint64_t)source + count > mod->wasmFile.elements[arguments.elementIndex].functionIndexes.size() || (uint64_t)destination + count > table.size())
+                if ((uint64_t)source + count > mod->wasmFile->elements[arguments.elementIndex].functionIndexes.size() || (uint64_t)destination + count > table->elements.size())
                     throw Trap();
 
                 for (uint32_t i = 0; i < count; i++)
-                    table[destination + i] = Reference { ReferenceType::Function, mod->wasmFile.elements[arguments.elementIndex].functionIndexes[source + i] };
+                    table->elements[destination + i] = Reference { ReferenceType::Function, mod->wasmFile->elements[arguments.elementIndex].functionIndexes[source + i] };
                 break;
             }
             case Opcode::elem_drop: {
-                Element& elem = mod->wasmFile.elements[std::get<uint32_t>(instruction.arguments)];
+                WasmFile::Element& elem = mod->wasmFile->elements[std::get<uint32_t>(instruction.arguments)];
                 elem.type = UINT32_MAX;
+                elem.table = UINT32_MAX;
                 elem.expr.clear();
                 elem.functionIndexes.clear();
-                elem.table = UINT32_MAX;
+                elem.referencesExpr.clear();
                 break;
             }
             case Opcode::table_copy: {
@@ -895,10 +945,10 @@ std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionTyp
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                auto& destinationTable = get_table(arguments.destination, mod);
-                auto& sourceTable = get_table(arguments.source, mod);
+                auto& destinationTable = mod->tables[arguments.destination];
+                auto& sourceTable = mod->tables[arguments.source];
 
-                if ((uint64_t)source + count > sourceTable.size() || (uint64_t)destination + count > destinationTable.size())
+                if ((uint64_t)source + count > sourceTable->elements.size() || (uint64_t)destination + count > destinationTable->elements.size())
                     throw Trap();
 
                 if (count == 0)
@@ -907,63 +957,55 @@ std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionTyp
                 if (destination <= source)
                 {
                     for (uint32_t i = 0; i < count; i++)
-                        destinationTable[destination + i] = sourceTable[source + i];
+                        destinationTable->elements[destination + i] = sourceTable->elements[source + i];
                 }
                 else
                 {
                     for (int64_t i = count - 1; i > -1; i--)
-                        destinationTable[destination + i] = sourceTable[source + i];
+                        destinationTable->elements[destination + i] = sourceTable->elements[source + i];
                 }
                 break;
             }
             case Opcode::table_grow: {
                 uint32_t addEntries = m_frame->stack.pop_as<uint32_t>();
 
-                auto& table = get_table(std::get<uint32_t>(instruction.arguments), mod);
-                uint32_t oldSize = table.size();
+                auto& table = mod->tables[std::get<uint32_t>(instruction.arguments)];
+                uint32_t oldSize = table->elements.size();
 
                 Reference value = m_frame->stack.pop_as<Reference>();
 
                 // NOTE: If the limits max is not present, it's UINT32_MAX
-                if ((uint64_t)table.size() + addEntries > mod->wasmFile.tables[std::get<uint32_t>(instruction.arguments)].limits.max)
+                if ((uint64_t)table->elements.size() + addEntries > table->max)
                 {
                     m_frame->stack.push((uint32_t)-1);
                     break;
                 }
 
-                if (table.size() + addEntries <= mod->wasmFile.tables[std::get<uint32_t>(instruction.arguments)].limits.max)
+                if (table->elements.size() + addEntries <= table->max)
                 {
-                    if (addEntries >= 0)
-                    {
-                        for (uint32_t i = 0; i < addEntries; i++)
-                            table.push_back(value);
-                    }
-                    else
-                    {
-                        assert(false);
-                        for (uint32_t i = 0; i < addEntries; i++)
-                            table.pop_back();
-                    }
+                    assert(addEntries >= 0);
+                    for (uint32_t i = 0; i < addEntries; i++)
+                        table->elements.push_back(value);
                 }
 
                 m_frame->stack.push(oldSize);
                 break;
             }
             case Opcode::table_size:
-                m_frame->stack.push((uint32_t)get_table(std::get<uint32_t>(instruction.arguments), mod).size());
+                m_frame->stack.push((uint32_t)mod->tables[std::get<uint32_t>(instruction.arguments)]->elements.size());
                 break;
             case Opcode::table_fill: {
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 Reference value = m_frame->stack.pop_as<Reference>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                auto& table = get_table(std::get<uint32_t>(instruction.arguments), mod);
+                auto& table = mod->tables[std::get<uint32_t>(instruction.arguments)];
                                 
-                if (destination + count > table.size())
+                if (destination + count > table->elements.size())
                     throw Trap();
 
                 for (uint32_t i = 0; i < count; i++)
-                    table[destination + i] = value;
+                    table->elements[destination + i] = value;
 
                 break;
             }
@@ -993,17 +1035,17 @@ std::vector<Value> VM::run_function(Module* mod, const FunctionType& functionTyp
     return returnValues;
 }
 
-VM::Module* VM::get_registered_module(const std::string& name)
+Ref<Module> VM::get_registered_module(const std::string& name)
 {
     return m_registered_modules[name];
 }
 
-Value VM::run_bare_code_returning(Module* mod, std::vector<Instruction> instructions, Type returnType)
+Value VM::run_bare_code_returning(Ref<Module> mod, std::vector<Instruction> instructions, Type returnType)
 {
     // clang-format off
     std::vector<Value> values = run_function(mod, {
             .params = {},
-            .returns = {(uint8_t)returnType},
+            .returns = {returnType},
         },
         {
             .locals = {},
@@ -1041,33 +1083,33 @@ void VM::run_unary_operation()
 }
 
 template <typename ActualType, typename StackType>
-void VM::run_load_instruction(const MemArg& memArg)
+void VM::run_load_instruction(const WasmFile::MemArg& memArg)
 {
-    auto& memory = get_memory(m_frame->mod);
+    auto& memory = m_frame->mod->memories[memArg.memoryIndex];
 
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
-    if ((uint64_t)address + memArg.offset + sizeof(ActualType) > memory.size * WASM_PAGE_SIZE)
+    if ((uint64_t)address + memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
         throw Trap();
 
     ActualType value;
-    memcpy(&value, &memory.data[address + memArg.offset], sizeof(ActualType));
+    memcpy(&value, &memory->data[address + memArg.offset], sizeof(ActualType));
 
     m_frame->stack.push((StackType)value);
 }
 
 template <typename ActualType, typename StackType>
-void VM::run_store_instruction(const MemArg& memArg)
+void VM::run_store_instruction(const WasmFile::MemArg& memArg)
 {
-    auto& memory = get_memory(m_frame->mod);
+    auto& memory = m_frame->mod->memories[memArg.memoryIndex];
 
     ActualType value = (ActualType)m_frame->stack.pop_as<StackType>();
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
-    if ((uint64_t)address + memArg.offset + sizeof(ActualType) > memory.size * WASM_PAGE_SIZE)
+    if ((uint64_t)address + memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
         throw Trap();
 
-    memcpy(&memory.data[address + memArg.offset], &value, sizeof(ActualType));
+    memcpy(&memory->data[address + memArg.offset], &value, sizeof(ActualType));
 }
 
 void VM::branch_to_label(uint32_t index)
@@ -1093,8 +1135,8 @@ void VM::branch_to_label(uint32_t index)
 
 void VM::call_function(uint32_t index)
 {
-    uint32_t functionTypeIndex = index < m_frame->mod->wasmFile.get_import_count_of_type(ImportType::Function) ? m_frame->mod->wasmFile.imports.at(index).functionIndex : m_frame->mod->wasmFile.functionTypeIndexes[index];
-    FunctionType functionType = m_frame->mod->wasmFile.functionTypes[functionTypeIndex];
+    uint32_t functionTypeIndex = index < m_frame->mod->wasmFile->get_import_count_of_type(WasmFile::ImportType::Function) ? m_frame->mod->wasmFile->imports.at(index).functionIndex : m_frame->mod->wasmFile->functionTypeIndexes[index];
+    WasmFile::FunctionType functionType = m_frame->mod->wasmFile->functionTypes[functionTypeIndex];
 
     std::vector<Value> args;
     for (size_t i = 0; i < functionType.params.size(); i++)
@@ -1110,10 +1152,10 @@ void VM::call_function(uint32_t index)
     }
 
     std::vector<Value> returnedValues;
-    if (index < m_frame->mod->wasmFile.imports.size())
+    if (index < m_frame->mod->wasmFile->imports.size())
     {
-        const auto& import = m_frame->mod->wasmFile.imports.at(index);
-        if (import.type != ImportType::Function)
+        const auto& import = m_frame->mod->wasmFile->imports.at(index);
+        if (import.type != WasmFile::ImportType::Function)
         {
             fprintf(stderr, "Tried to call an import of different type than function\n");
             throw Trap();
@@ -1137,70 +1179,18 @@ void VM::call_function(uint32_t index)
         m_frame->stack.push(returned);
 }
 
-Value& VM::get_global(uint32_t index, Module* module)
+VM::ImportLocation VM::find_import(const std::string& environment, const std::string& name, WasmFile::ImportType importType)
 {
-    if (index < module->wasmFile.get_import_count_of_type(ImportType::Global))
+    for (const auto& [module_name, module] : m_registered_modules)
     {
-        const auto& import = module->wasmFile.imports.at(index);
-        
-        for (const auto& [name, mod] : m_registered_modules)
+        if (module_name == environment)
         {
-            if (name == import.environment)
-            {
-                Export exp = mod->wasmFile.find_export_by_name(import.name);
-                assert(exp.type == 0x03); // FIXME: Use an enum
-                return mod->globals[exp.index];
-            }
+            WasmFile::Export exp = module->wasmFile->find_export_by_name(name);
+            if(exp.type != importType)
+                throw Trap();
+            return ImportLocation { module, exp.index };
         }
     }
     
-    return module->globals[index];
-}
-
-std::vector<Reference>& VM::get_table(uint32_t index, Module* module)
-{
-    if (index < module->wasmFile.get_import_count_of_type(ImportType::Table))
-    {
-        const auto& import = module->wasmFile.imports.at(index);
-        
-        for (const auto& [name, mod] : m_registered_modules)
-        {
-            if (name == import.environment)
-            {
-                Export exp = mod->wasmFile.find_export_by_name(import.name);
-                assert(exp.type == 0x01); // FIXME: Use an enum
-                return mod->tables[exp.index];
-            }
-        }
-    }
-    
-    return module->tables[index];
-}
-
-VM::Memory& VM::get_memory(Module* module)
-{
-    if (module->wasmFile.memories.size() > 0)
-        return module->memory;
-
-    if (module->wasmFile.get_import_count_of_type(ImportType::Memory) > 0)
-    {
-        for (const auto& import : module->wasmFile.imports)
-        {
-            if (import.type != ImportType::Memory)
-                continue;
-
-            for (const auto& [name, mod] : m_registered_modules)
-            {
-                if (name == import.environment)
-                {
-                    Export exp = mod->wasmFile.find_export_by_name(import.name);
-                    assert(exp.type == 0x02); // FIXME: Use an enum
-                    return mod->memory;
-                }
-            }
-        }
-        
-    }
-
-    assert(false);
+    throw Trap();
 }

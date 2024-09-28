@@ -7,11 +7,6 @@
 #include <typeinfo>
 #include <vector>
 
-static inline __attribute__((__always_inline__)) int64_t sign_extend(uint64_t value, uint8_t bits)
-{
-    return (int64_t)(value << (64 - bits)) >> (64 - bits);
-}
-
 class Stream;
 
 template <typename T>
@@ -145,6 +140,18 @@ public:
         for (uint32_t i = 0; i < size; i++)
         {
             vec.push_back(read_typed<T>());
+        }
+        return vec;
+    }
+
+    template <typename T, T(function)(Stream&)>
+    std::vector<T> read_vec_with_function()
+    {
+        uint32_t size = read_leb<uint32_t>();
+        std::vector<T> vec;
+        for (uint32_t i = 0; i < size; i++)
+        {
+            vec.push_back(function(*this));
         }
         return vec;
     }

@@ -11,13 +11,13 @@
 
 struct BlockLoopArguments
 {
-    BlockType blockType;
+    WasmFile::BlockType blockType;
     Label label;
 };
 
 struct IfArguments
 {
-    BlockType blockType;
+    WasmFile::BlockType blockType;
     Label endLabel;
     std::optional<uint32_t> elseLocation;
 };
@@ -32,6 +32,18 @@ struct CallIndirectArguments
 {
     uint32_t typeIndex;
     uint32_t tableIndex;
+};
+
+struct MemoryInitArguments
+{
+    uint32_t dataIndex;
+    uint32_t memoryIndex;
+};
+
+struct MemoryCopyArguments
+{
+    uint32_t source;
+    uint32_t destination;
 };
 
 struct TableInitArguments
@@ -54,7 +66,7 @@ struct NoneArguments
 struct Instruction
 {
     Opcode opcode;
-    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, TableInitArguments, TableCopyArguments, std::vector<uint8_t>, MemArg, Type, Label, uint32_t, uint64_t, float, double> arguments;
+    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, MemoryInitArguments, MemoryCopyArguments, TableInitArguments, TableCopyArguments, std::vector<uint8_t>, WasmFile::MemArg, Type, Label, uint32_t, uint64_t, float, double> arguments;
 };
 
-std::vector<Instruction> parse(Stream& stream, const WasmFile& wasmFile);
+std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile);

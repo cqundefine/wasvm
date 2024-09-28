@@ -10,6 +10,9 @@ RED = "\u001b[38;5;9m"
 DARK_RED = "\u001b[38;5;1m"
 RESET = "\u001b[0m"
 
+TESTS_PATH = "tests/"
+assert TESTS_PATH.endswith("/")
+
 def colored(text: str, color: str) -> str:
     return f"{color}{text}{RESET}"
 
@@ -21,23 +24,26 @@ failed_to_load = 0
 
 crashes = []
 
-tests = os.listdir("tests")
-tests.sort()
-for filename in tests:
-    if filename == "linking":
+tests: list[str] = []
+for root, dirs, files in os.walk(TESTS_PATH):
+    if root == TESTS_PATH:
         continue
-    if os.path.exists("tests/" + filename + "/" + filename + ".json"):
+    tests.append(root.removeprefix(TESTS_PATH))
+tests.sort()
+
+for filename in tests:
+    if os.path.exists(os.path.join(TESTS_PATH, filename, filename.split("/")[-1] + ".json")):
         process = subprocess.run(["./wasvm", "-t", filename], capture_output=True)
         if process.returncode != 0:
-            print(f"{filename:<30} {colored("vm crashed", DARK_RED)}")
+            print(f"{filename:<50} {colored("vm crashed", DARK_RED)}")
             crashes.append(filename)
         else:
             data = json.loads(process.stdout.decode().splitlines()[-1])
             if data["passed"] == data["total"]:
                 pass
-                # print(f'{filename:<30} {colored("all passed", GREEN)}')
+                # print(f'{filename:<50} {colored("all passed", GREEN)}')
             else:
-                print(f'{filename:<30} {data["total"]}/{colored(data["passed"], GREEN)}/{colored(data["failed"], RED)}/{colored(data["skipped"], YELLOW)}/{colored(data["failed_to_load"], DARK_RED)}')
+                print(f'{filename:<50} {data["total"]}/{colored(data["passed"], GREEN)}/{colored(data["failed"], RED)}/{colored(data["skipped"], YELLOW)}/{colored(data["failed_to_load"], DARK_RED)}')
             total += data["total"]
             passed += data["passed"]
             failed += data["failed"]
@@ -45,11 +51,11 @@ for filename in tests:
             failed_to_load += data["failed_to_load"]
 
 print("-------------------------------------------")
-print(f"{"Total:":<30} {total}", )
-print(f"{"Passed:":<30} {colored(passed, GREEN)}")
-print(f"{"Failed:":<30} {colored(failed, RED)}")
-print(f"{"Skipped:":<30} {colored(skipped, YELLOW)}")
-print(f"{"Failed to load:":<30} {colored(failed_to_load, DARK_RED)}")
+print(f"{"Total:":<50} {total}", )
+print(f"{"Passed:":<50} {colored(passed, GREEN)}")
+print(f"{"Failed:":<50} {colored(failed, RED)}")
+print(f"{"Skipped:":<50} {colored(skipped, YELLOW)}")
+print(f"{"Failed to load:":<50} {colored(failed_to_load, DARK_RED)}")
 if len(crashes) != 0:
     print("Crashes:")
     for crash in crashes:

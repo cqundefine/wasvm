@@ -48,7 +48,7 @@ int main(int argc, char** argv)
     else
     {
         FileStream fileStream(argv[1]);
-        WasmFile file = WasmFile::read_from_stream(fileStream);
+        auto file = WasmFile::WasmFile::read_from_stream(fileStream);
 
         VM::load_module(file);
 

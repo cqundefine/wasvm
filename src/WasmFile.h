@@ -1,201 +1,210 @@
 #pragma once
 
 #include <Stream.h>
+#include <Type.h>
+#include <Util.h>
 #include <exception>
 #include <map>
 #include <optional>
 #include <vector>
 
-constexpr uint32_t WASM_SIGNATURE = 0x6d736100;
-
 struct Instruction;
 
-enum Section
+namespace WasmFile
 {
-    CustomSection = 0,
-    TypeSection = 1,
-    ImportSection = 2,
-    FunctionSection = 3,
-    TableSection = 4,
-    MemorySection = 5,
-    GlobalSection = 6,
-    ExportSection = 7,
-    StartSection = 8,
-    ElementSection = 9,
-    CodeSection = 10,
-    DataSection = 11,
-    DataCountSection = 12,
-};
+    constexpr uint32_t WASM_SIGNATURE = 0x6d736100;
 
-struct InvalidWASMException : public std::exception
-{
-    const char* what() const throw()
+    enum Section
     {
-        return "InvalidWASMException";
-    }
-};
+        CustomSection = 0,
+        TypeSection = 1,
+        ImportSection = 2,
+        FunctionSection = 3,
+        TableSection = 4,
+        MemorySection = 5,
+        GlobalSection = 6,
+        ExportSection = 7,
+        StartSection = 8,
+        ElementSection = 9,
+        CodeSection = 10,
+        DataSection = 11,
+        DataCountSection = 12,
+    };
 
-struct Limits
-{
-    uint32_t min;
-    uint32_t max;
-
-    static Limits read_from_stream(Stream& stream);
-};
-
-struct MemArg
-{
-    uint32_t align;
-    uint32_t offset;
-
-    static MemArg read_from_stream(Stream& stream);
-};
-
-struct FunctionType
-{
-    std::vector<uint8_t> params;
-    std::vector<uint8_t> returns;
-
-    static FunctionType read_from_stream(Stream& stream);
-
-    inline bool operator==(const FunctionType& other) const
+    struct InvalidWASMException : public std::exception
     {
-        return params == other.params && returns == other.returns;
-    }
-};
+        const char* what() const throw()
+        {
+            return "InvalidWASMException";
+        }
+    };
 
-enum class ImportType
-{
-    Function,
-    Table,
-    Memory,
-    Global
-};
+    struct Limits
+    {
+        uint32_t min;
+        uint32_t max;
 
-struct Import
-{
-    ImportType type;
-    std::string environment;
-    std::string name;
+        static Limits read_from_stream(Stream& stream);
+    };
 
-    // FIXME: Make this a union
-    uint32_t functionIndex;
+    struct MemArg
+    {
+        uint32_t align;
+        uint32_t offset;
+        uint32_t memoryIndex;
 
-    uint8_t tableRefType;
-    Limits tableLimits;
+        static MemArg read_from_stream(Stream& stream);
+    };
 
-    Limits memoryLimits;
+    struct FunctionType
+    {
+        std::vector<Type> params;
+        std::vector<Type> returns;
 
-    uint8_t globalType;
-    uint8_t globalMut;
+        static FunctionType read_from_stream(Stream& stream);
 
-    static Import read_from_stream(Stream& stream);
-};
+        inline bool operator==(const FunctionType& other) const
+        {
+            return params == other.params && returns == other.returns;
+        }
+    };
 
-struct Table
-{
-    uint8_t refType;
-    Limits limits;
+    enum class ImportType
+    {
+        Function,
+        Table,
+        Memory,
+        Global
+    };
 
-    static Table read_from_stream(Stream& stream);
-};
+    struct Import
+    {
+        ImportType type;
+        std::string environment;
+        std::string name;
 
-struct Memory
-{
-    Limits limits;
+        // FIXME: Make this a union
+        uint32_t functionIndex;
 
-    static Memory read_from_stream(Stream& stream);
-};
+        Type tableRefType;
+        Limits tableLimits;
 
-struct Global
-{
-    uint8_t type;
-    uint8_t mut;
-    std::vector<Instruction> initCode;
+        Limits memoryLimits;
 
-    static Global read_from_stream(Stream& stream);
-};
+        Type globalType;
+        uint8_t globalMut;
 
-struct Export
-{
-    std::string name;
-    uint8_t type;
-    uint32_t index;
+        static Import read_from_stream(Stream& stream);
+    };
 
-    static Export read_from_stream(Stream& stream);
-};
+    struct Table
+    {
+        Type refType;
+        Limits limits;
 
-enum class ElementMode
-{
-    Passive,
-    Active,
-    Declarative
-};
+        static Table read_from_stream(Stream& stream);
+    };
 
-struct Element
-{
-    uint32_t type;
-    uint32_t table;
-    std::vector<Instruction> expr;
-    std::vector<uint32_t> functionIndexes;
-    ElementMode mode;
+    struct Memory
+    {
+        Limits limits;
 
-    static Element read_from_stream(Stream& stream);
-};
+        static Memory read_from_stream(Stream& stream);
+    };
 
-struct Local
-{
-    uint32_t count;
-    uint8_t type;
+    struct Global
+    {
+        Type type;
+        uint8_t mut;
+        std::vector<Instruction> initCode;
 
-    static Local read_from_stream(Stream& stream);
-};
+        static Global read_from_stream(Stream& stream);
+    };
 
-struct Code
-{
-    std::vector<Local> locals;
-    std::vector<Instruction> instructions;
+    struct Export
+    {
+        std::string name;
+        ImportType type;
+        uint32_t index;
 
-    static Code read_from_stream(Stream& stream);
-};
+        static Export read_from_stream(Stream& stream);
+    };
 
-struct Data
-{
-    uint32_t type;
-    std::vector<Instruction> expr;
-    std::vector<uint8_t> data;
+    enum class ElementMode
+    {
+        Passive,
+        Active,
+        Declarative
+    };
 
-    static Data read_from_stream(Stream& stream);
-};
+    struct Element
+    {
+        uint32_t type;
+        uint32_t table;
+        std::vector<Instruction> expr;
+        std::vector<uint32_t> functionIndexes;
+        std::vector<std::vector<Instruction>> referencesExpr;
+        ElementMode mode;
 
-struct WasmFile
-{
-    std::vector<FunctionType> functionTypes;
-    std::vector<Import> imports;
-    std::map<uint32_t, uint32_t> functionTypeIndexes;
-    std::map<uint32_t, Table> tables;
-    std::vector<Memory> memories;
-    std::map<uint32_t, Global> globals;
-    std::vector<Export> exports;
-    uint32_t startFunction = UINT32_MAX;
-    std::vector<Element> elements;
-    std::map<uint32_t, Code> codeBlocks;
-    std::vector<Data> dataBlocks;
+        static Element read_from_stream(Stream& stream);
+    };
 
-    static WasmFile read_from_stream(Stream& stream);
+    struct Local
+    {
+        uint32_t count;
+        Type type;
 
-    Export find_export_by_name(const std::string& name);
+        static Local read_from_stream(Stream& stream);
+    };
 
-    uint32_t get_import_count_of_type(ImportType type);
-};
+    struct Code
+    {
+        std::vector<Local> locals;
+        std::vector<Instruction> instructions;
 
-struct BlockType
-{
-    std::optional<uint8_t> type;
-    uint64_t index;
+        static Code read_from_stream(Stream& stream);
+    };
 
-    static BlockType read_from_stream(Stream& stream);
+    struct Data
+    {
+        uint32_t type;
+        uint32_t memoryIndex;
+        std::vector<Instruction> expr;
+        std::vector<uint8_t> data;
+        ElementMode mode;
 
-    std::vector<uint8_t> get_param_types(const WasmFile& wasmFile) const;
-    std::vector<uint8_t> get_return_types(const WasmFile& wasmFile) const;
-};
+        static Data read_from_stream(Stream& stream);
+    };
+
+    struct WasmFile
+    {
+        std::vector<FunctionType> functionTypes;
+        std::vector<Import> imports;
+        std::map<uint32_t, uint32_t> functionTypeIndexes;
+        std::vector<Table> tables;
+        std::vector<Memory> memories;
+        std::vector<Global> globals;
+        std::vector<Export> exports;
+        uint32_t startFunction = UINT32_MAX;
+        std::vector<Element> elements;
+        std::map<uint32_t, Code> codeBlocks;
+        std::vector<Data> dataBlocks;
+
+        static Ref<WasmFile> read_from_stream(Stream& stream);
+
+        Export find_export_by_name(const std::string& name);
+
+        uint32_t get_import_count_of_type(ImportType type);
+    };
+
+    struct BlockType
+    {
+        std::optional<Type> type;
+        uint64_t index;
+
+        static BlockType read_from_stream(Stream& stream);
+
+        std::vector<Type> get_param_types(Ref<WasmFile> wasmFile) const;
+        std::vector<Type> get_return_types(Ref<WasmFile> wasmFile) const;
+    };
+}

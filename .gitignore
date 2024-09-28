@@ -7,3 +7,4 @@ tests
 libsodium
 .vscode
 spec
+!tests/spectest.wat
