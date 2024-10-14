@@ -11,14 +11,14 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
     while (!stream.eof())
     {
         Opcode opcode = (Opcode)stream.read_little_endian<uint8_t>();
-        
+
         switch (opcode)
         {
             case Opcode::block: {
                 WasmFile::BlockType blockType = stream.read_typed<WasmFile::BlockType>();
                 blockBeginStack.push({ instructions.size(), blockType.get_return_types(wasmFile).size(), LabelBeginType::Other });
-                
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = BlockLoopArguments { .blockType = blockType }});
+
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = BlockLoopArguments { .blockType = blockType } });
                 break;
             }
             case Opcode::loop: {
@@ -31,17 +31,20 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                     .beginType = LabelBeginType::Other
                 };
 
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = BlockLoopArguments { .blockType = blockType, .label = label }});
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = BlockLoopArguments { .blockType = blockType, .label = label } });
                 break;
             }
             case Opcode::if_: {
                 WasmFile::BlockType blockType = stream.read_typed<WasmFile::BlockType>();
                 blockBeginStack.push({ instructions.size(), blockType.get_return_types(wasmFile).size(), LabelBeginType::Other });
 
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = IfArguments { .blockType = blockType }});
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = IfArguments { .blockType = blockType } });
                 break;
             }
             case Opcode::else_: {
+                if (blockBeginStack.empty())
+                    throw WasmFile::InvalidWASMException();
+
                 auto begin = blockBeginStack.top();
 
                 assert(std::holds_alternative<IfArguments>(instructions[std::get<0>(begin)].arguments));
@@ -62,7 +65,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 if (std::get<2>(begin) == LabelBeginType::LoopInvalid)
                     break;
 
-                Label label = { 
+                Label label = {
                     .continuation = (uint32_t)instructions.size(),
                     .arity = std::get<1>(begin),
                     .beginType = std::get<2>(begin)
@@ -98,16 +101,13 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_leb<uint32_t>() });
                 break;
             case Opcode::br_table:
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = BranchTableArguments {
-                    .labels = stream.read_vec<uint32_t>(),
-                    .defaultLabel = stream.read_leb<uint32_t>()
-                }});
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = BranchTableArguments { .labels = stream.read_vec<uint32_t>(), .defaultLabel = stream.read_leb<uint32_t>() } });
                 break;
             case Opcode::call_indirect:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = CallIndirectArguments {
-                    .typeIndex = stream.read_leb<uint32_t>(),
-                    .tableIndex = stream.read_leb<uint32_t>(),
-                }});
+                                                                           .typeIndex = stream.read_leb<uint32_t>(),
+                                                                           .tableIndex = stream.read_leb<uint32_t>(),
+                                                                       } });
                 break;
             case Opcode::select_typed:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_vec<uint8_t>() });
@@ -156,43 +156,306 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = type });
                 break;
             }
-            case Opcode::multi_byte1: {
-                MultiByte1 secondByte = (MultiByte1)stream.read_leb<uint32_t>();
-                Opcode realOpcode = (Opcode)((opcode << 8) | secondByte);
+            case Opcode::multi_byte_fc: {
+                MultiByteFC secondByte = (MultiByteFC)stream.read_leb<uint32_t>();
+                Opcode realOpcode = (Opcode)((((uint32_t)opcode) << 8) | ((uint32_t)secondByte));
                 switch (secondByte)
                 {
-                    case MultiByte1::fc_memory_init:
+                    case MultiByteFC::memory_init:
                         instructions.push_back(Instruction { .opcode = realOpcode, .arguments = MemoryInitArguments { .dataIndex = stream.read_leb<uint32_t>(), .memoryIndex = stream.read_little_endian<uint8_t>() } });
                         break;
-                    case MultiByte1::fc_memory_copy:
+                    case MultiByteFC::memory_copy:
                         instructions.push_back(Instruction { .opcode = realOpcode, .arguments = MemoryCopyArguments { .source = stream.read_little_endian<uint8_t>(), .destination = stream.read_little_endian<uint8_t>() } });
                         break;
-                    case MultiByte1::fc_table_init:
-                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = TableInitArguments { .elementIndex = stream.read_leb<uint32_t>(), .tableIndex = stream.read_leb<uint32_t>() }});
+                    case MultiByteFC::table_init:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = TableInitArguments { .elementIndex = stream.read_leb<uint32_t>(), .tableIndex = stream.read_leb<uint32_t>() } });
                         break;
-                    case MultiByte1::fc_table_copy:
-                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = TableCopyArguments { .destination = stream.read_leb<uint32_t>(), .source = stream.read_leb<uint32_t>() }});
+                    case MultiByteFC::table_copy:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = TableCopyArguments { .destination = stream.read_leb<uint32_t>(), .source = stream.read_leb<uint32_t>() } });
                         break;
-                    case MultiByte1::fc_data_drop:
-                    case MultiByte1::fc_memory_fill:
-                    case MultiByte1::fc_elem_drop:
-                    case MultiByte1::fc_table_grow:
-                    case MultiByte1::fc_table_size:
-                    case MultiByte1::fc_table_fill:
+                    case MultiByteFC::data_drop:
+                    case MultiByteFC::memory_fill:
+                    case MultiByteFC::elem_drop:
+                    case MultiByteFC::table_grow:
+                    case MultiByteFC::table_size:
+                    case MultiByteFC::table_fill:
                         instructions.push_back(Instruction { .opcode = realOpcode, .arguments = stream.read_leb<uint32_t>() });
                         break;
-                    case MultiByte1::fc_i32_trunc_sat_f32_s:
-                    case MultiByte1::fc_i32_trunc_sat_f32_u:
-                    case MultiByte1::fc_i32_trunc_sat_f64_s:
-                    case MultiByte1::fc_i32_trunc_sat_f64_u:
-                    case MultiByte1::fc_i64_trunc_sat_f32_s:
-                    case MultiByte1::fc_i64_trunc_sat_f32_u:
-                    case MultiByte1::fc_i64_trunc_sat_f64_s:
-                    case MultiByte1::fc_i64_trunc_sat_f64_u:
+                    case MultiByteFC::i32_trunc_sat_f32_s:
+                    case MultiByteFC::i32_trunc_sat_f32_u:
+                    case MultiByteFC::i32_trunc_sat_f64_s:
+                    case MultiByteFC::i32_trunc_sat_f64_u:
+                    case MultiByteFC::i64_trunc_sat_f32_s:
+                    case MultiByteFC::i64_trunc_sat_f32_u:
+                    case MultiByteFC::i64_trunc_sat_f64_s:
+                    case MultiByteFC::i64_trunc_sat_f64_u:
                         instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     default:
-                        fprintf(stderr, "Error: Unknown opcode 0x%x %d\n", opcode, secondByte);
+                        fprintf(stderr, "Error: Unknown opcode 0x%x %d\n", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
+                        throw WasmFile::InvalidWASMException();
+                }
+                break;
+            }
+            case Opcode::multi_byte_fd: {
+                MultiByteFD secondByte = (MultiByteFD)stream.read_leb<uint32_t>();
+                Opcode realOpcode = (Opcode)((((uint32_t)opcode) << 8) | ((uint32_t)secondByte));
+                switch (secondByte)
+                {
+                    case MultiByteFD::v128_load:
+                    case MultiByteFD::v128_load8x8_s:
+                    case MultiByteFD::v128_load8x8_u:
+                    case MultiByteFD::v128_load16x4_s:
+                    case MultiByteFD::v128_load16x4_u:
+                    case MultiByteFD::v128_load32x2_s:
+                    case MultiByteFD::v128_load32x2_u:
+                    case MultiByteFD::v128_load8_splat:
+                    case MultiByteFD::v128_load16_splat:
+                    case MultiByteFD::v128_load32_splat:
+                    case MultiByteFD::v128_load64_splat:
+                    case MultiByteFD::v128_store:
+                    case MultiByteFD::v128_load32_zero:
+                    case MultiByteFD::v128_load64_zero:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = stream.read_typed<WasmFile::MemArg>() });
+                        break;
+                    case MultiByteFD::v128_const:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = stream.read_little_endian<uint128_t>() });
+                        break;
+                    case MultiByteFD::i8x16_extract_lane_s:
+                    case MultiByteFD::i8x16_extract_lane_u:
+                    case MultiByteFD::i8x16_replace_lane:
+                    case MultiByteFD::i16x8_extract_lane_s:
+                    case MultiByteFD::i16x8_extract_lane_u:
+                    case MultiByteFD::i16x8_replace_lane:
+                    case MultiByteFD::i32x4_extract_lane:
+                    case MultiByteFD::i32x4_replace_lane:
+                    case MultiByteFD::i64x2_extract_lane:
+                    case MultiByteFD::i64x2_replace_lane:
+                    case MultiByteFD::f32x4_extract_lane:
+                    case MultiByteFD::f32x4_replace_lane:
+                    case MultiByteFD::f64x2_extract_lane:
+                    case MultiByteFD::f64x2_replace_lane:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = stream.read_little_endian<uint8_t>() });
+                        break;
+                    case MultiByteFD::v128_load8_lane:
+                    case MultiByteFD::v128_load16_lane:
+                    case MultiByteFD::v128_load32_lane:
+                    case MultiByteFD::v128_load64_lane:
+                    case MultiByteFD::v128_store8_lane:
+                    case MultiByteFD::v128_store16_lane:
+                    case MultiByteFD::v128_store32_lane:
+                    case MultiByteFD::v128_store64_lane:
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = LoadStoreLaneArguments { .memArg = stream.read_typed<WasmFile::MemArg>(), .lane = stream.read_little_endian<uint8_t>() } });
+                        break;
+                    case MultiByteFD::i8x16_shuffle: {
+                        std::vector<uint8_t> lanes;
+                        for (uint32_t i = 0; i < 16; i++)
+                            lanes.push_back(stream.read_little_endian<uint8_t>());   
+                        instructions.push_back(Instruction { .opcode = realOpcode, .arguments = lanes });
+                        break;
+                    }
+                    case MultiByteFD::i8x16_swizzle:
+                    case MultiByteFD::i8x16_splat:
+                    case MultiByteFD::i16x8_splat:
+                    case MultiByteFD::i32x4_splat:
+                    case MultiByteFD::i64x2_splat:
+                    case MultiByteFD::f32x4_splat:
+                    case MultiByteFD::f64x2_splat:
+                    case MultiByteFD::i8x16_eq:
+                    case MultiByteFD::i8x16_ne:
+                    case MultiByteFD::i8x16_lt_s:
+                    case MultiByteFD::i8x16_lt_u:
+                    case MultiByteFD::i8x16_gt_s:
+                    case MultiByteFD::i8x16_gt_u:
+                    case MultiByteFD::i8x16_le_s:
+                    case MultiByteFD::i8x16_le_u:
+                    case MultiByteFD::i8x16_ge_s:
+                    case MultiByteFD::i8x16_ge_u:
+                    case MultiByteFD::i16x8_eq:
+                    case MultiByteFD::i16x8_ne:
+                    case MultiByteFD::i16x8_lt_s:
+                    case MultiByteFD::i16x8_lt_u:
+                    case MultiByteFD::i16x8_gt_s:
+                    case MultiByteFD::i16x8_gt_u:
+                    case MultiByteFD::i16x8_le_s:
+                    case MultiByteFD::i16x8_le_u:
+                    case MultiByteFD::i16x8_ge_s:
+                    case MultiByteFD::i16x8_ge_u:
+                    case MultiByteFD::i32x4_eq:
+                    case MultiByteFD::i32x4_ne:
+                    case MultiByteFD::i32x4_lt_s:
+                    case MultiByteFD::i32x4_lt_u:
+                    case MultiByteFD::i32x4_gt_s:
+                    case MultiByteFD::i32x4_gt_u:
+                    case MultiByteFD::i32x4_le_s:
+                    case MultiByteFD::i32x4_le_u:
+                    case MultiByteFD::i32x4_ge_s:
+                    case MultiByteFD::i32x4_ge_u:
+                    case MultiByteFD::f32x4_eq:
+                    case MultiByteFD::f32x4_ne:
+                    case MultiByteFD::f32x4_lt:
+                    case MultiByteFD::f32x4_gt:
+                    case MultiByteFD::f32x4_le:
+                    case MultiByteFD::f32x4_ge:
+                    case MultiByteFD::f64x2_eq:
+                    case MultiByteFD::f64x2_ne:
+                    case MultiByteFD::f64x2_lt:
+                    case MultiByteFD::f64x2_gt:
+                    case MultiByteFD::f64x2_le:
+                    case MultiByteFD::f64x2_ge:
+                    case MultiByteFD::v128_not:
+                    case MultiByteFD::v128_and:
+                    case MultiByteFD::v128_andnot:
+                    case MultiByteFD::v128_or:
+                    case MultiByteFD::v128_xor:
+                    case MultiByteFD::v128_bitselect:
+                    case MultiByteFD::v128_any_true:
+                    case MultiByteFD::f32x4_demote_f64x2_zero:
+                    case MultiByteFD::f64x2_promote_low_f32x4:
+                    case MultiByteFD::i8x16_abs:
+                    case MultiByteFD::i8x16_neg:
+                    case MultiByteFD::i8x16_popcnt:
+                    case MultiByteFD::i8x16_all_true:
+                    case MultiByteFD::i8x16_bitmask:
+                    case MultiByteFD::i8x16_narrow_i16x8_s:
+                    case MultiByteFD::i8x16_narrow_i16x8_u:
+                    case MultiByteFD::f32x4_ceil:
+                    case MultiByteFD::f32x4_floor:
+                    case MultiByteFD::f32x4_trunc:
+                    case MultiByteFD::f32x4_nearest:
+                    case MultiByteFD::i8x16_shl:
+                    case MultiByteFD::i8x16_shr_s:
+                    case MultiByteFD::i8x16_shr_u:
+                    case MultiByteFD::i8x16_add:
+                    case MultiByteFD::i8x16_add_sat_s:
+                    case MultiByteFD::i8x16_add_sat_u:
+                    case MultiByteFD::i8x16_sub:
+                    case MultiByteFD::i8x16_sub_sat_s:
+                    case MultiByteFD::i8x16_sub_sat_u:
+                    case MultiByteFD::f64x2_ceil:
+                    case MultiByteFD::f64x2_floor:
+                    case MultiByteFD::i8x16_min_s:
+                    case MultiByteFD::i8x16_min_u:
+                    case MultiByteFD::i8x16_max_s:
+                    case MultiByteFD::i8x16_max_u:
+                    case MultiByteFD::f64x2_trunc:
+                    case MultiByteFD::i8x16_avgr_u:
+                    case MultiByteFD::i16x8_extadd_pairwise_i8x16_s:
+                    case MultiByteFD::i16x8_extadd_pairwise_i8x16_u:
+                    case MultiByteFD::i32x4_extadd_pairwise_i16x8_s:
+                    case MultiByteFD::i32x4_extadd_pairwise_i16x8_u:
+                    case MultiByteFD::i16x8_abs:
+                    case MultiByteFD::i16x8_neg:
+                    case MultiByteFD::i16x8_q15mulr_sat_s:
+                    case MultiByteFD::i16x8_all_true:
+                    case MultiByteFD::i16x8_bitmask:
+                    case MultiByteFD::i16x8_narrow_i32x4_s:
+                    case MultiByteFD::i16x8_narrow_i32x4_u:
+                    case MultiByteFD::i16x8_extend_low_i8x16_s:
+                    case MultiByteFD::i16x8_extend_high_i8x16_s:
+                    case MultiByteFD::i16x8_extend_low_i8x16_u:
+                    case MultiByteFD::i16x8_extend_high_i8x16_u:
+                    case MultiByteFD::i16x8_shl:
+                    case MultiByteFD::i16x8_shr_s:
+                    case MultiByteFD::i16x8_shr_u:
+                    case MultiByteFD::i16x8_add:
+                    case MultiByteFD::i16x8_add_sat_s:
+                    case MultiByteFD::i16x8_add_sat_u:
+                    case MultiByteFD::i16x8_sub:
+                    case MultiByteFD::i16x8_sub_sat_s:
+                    case MultiByteFD::i16x8_sub_sat_u:
+                    case MultiByteFD::f64x2_nearest:
+                    case MultiByteFD::i16x8_mul:
+                    case MultiByteFD::i16x8_min_s:
+                    case MultiByteFD::i16x8_min_u:
+                    case MultiByteFD::i16x8_max_s:
+                    case MultiByteFD::i16x8_max_u:
+                    case MultiByteFD::i16x8_avgr_u:
+                    case MultiByteFD::i16x8_extmul_low_i8x16_s:
+                    case MultiByteFD::i16x8_extmul_high_i8x16_s:
+                    case MultiByteFD::i16x8_extmul_low_i8x16_u:
+                    case MultiByteFD::i16x8_extmul_high_i8x16_u:
+                    case MultiByteFD::i32x4_abs:
+                    case MultiByteFD::i32x4_neg:
+                    case MultiByteFD::i32x4_all_true:
+                    case MultiByteFD::i32x4_bitmask:
+                    case MultiByteFD::i32x4_extend_low_i16x8_s:
+                    case MultiByteFD::i32x4_extend_high_i16x8_s:
+                    case MultiByteFD::i32x4_extend_low_i16x8_u:
+                    case MultiByteFD::i32x4_extend_high_i16x8_u:
+                    case MultiByteFD::i32x4_shl:
+                    case MultiByteFD::i32x4_shr_s:
+                    case MultiByteFD::i32x4_shr_u:
+                    case MultiByteFD::i32x4_add:
+                    case MultiByteFD::i32x4_sub:
+                    case MultiByteFD::i32x4_mul:
+                    case MultiByteFD::i32x4_min_s:
+                    case MultiByteFD::i32x4_min_u:
+                    case MultiByteFD::i32x4_max_s:
+                    case MultiByteFD::i32x4_max_u:
+                    case MultiByteFD::i32x4_dot_i16x8_s:
+                    case MultiByteFD::i32x4_extmul_low_i16x8_s:
+                    case MultiByteFD::i32x4_extmul_high_i16x8_s:
+                    case MultiByteFD::i32x4_extmul_low_i16x8_u:
+                    case MultiByteFD::i32x4_extmul_high_i16x8_u:
+                    case MultiByteFD::i64x2_abs:
+                    case MultiByteFD::i64x2_neg:
+                    case MultiByteFD::i64x2_all_true:
+                    case MultiByteFD::i64x2_bitmask:
+                    case MultiByteFD::i64x2_extend_low_i32x4_s:
+                    case MultiByteFD::i64x2_extend_high_i32x4_s:
+                    case MultiByteFD::i64x2_extend_low_i32x4_u:
+                    case MultiByteFD::i64x2_extend_high_i32x4_u:
+                    case MultiByteFD::i64x2_shl:
+                    case MultiByteFD::i64x2_shr_s:
+                    case MultiByteFD::i64x2_shr_u:
+                    case MultiByteFD::i64x2_add:
+                    case MultiByteFD::i64x2_sub:
+                    case MultiByteFD::i64x2_mul:
+                    case MultiByteFD::i64x2_eq:
+                    case MultiByteFD::i64x2_ne:
+                    case MultiByteFD::i64x2_lt_s:
+                    case MultiByteFD::i64x2_gt_s:
+                    case MultiByteFD::i64x2_le_s:
+                    case MultiByteFD::i64x2_ge_s:
+                    case MultiByteFD::i64x2_extmul_low_i32x4_s:
+                    case MultiByteFD::i64x2_extmul_high_i32x4_s:
+                    case MultiByteFD::i64x2_extmul_low_i32x4_u:
+                    case MultiByteFD::i64x2_extmul_high_i32x4_u:
+                    case MultiByteFD::f32x4_abs:
+                    case MultiByteFD::f32x4_neg:
+                    case MultiByteFD::f32x4_sqrt:
+                    case MultiByteFD::f32x4_add:
+                    case MultiByteFD::f32x4_sub:
+                    case MultiByteFD::f32x4_mul:
+                    case MultiByteFD::f32x4_div:
+                    case MultiByteFD::f32x4_min:
+                    case MultiByteFD::f32x4_max:
+                    case MultiByteFD::f32x4_pmin:
+                    case MultiByteFD::f32x4_pmax:
+                    case MultiByteFD::f64x2_abs:
+                    case MultiByteFD::f64x2_neg:
+                    case MultiByteFD::f64x2_sqrt:
+                    case MultiByteFD::f64x2_add:
+                    case MultiByteFD::f64x2_sub:
+                    case MultiByteFD::f64x2_mul:
+                    case MultiByteFD::f64x2_div:
+                    case MultiByteFD::f64x2_min:
+                    case MultiByteFD::f64x2_max:
+                    case MultiByteFD::f64x2_pmin:
+                    case MultiByteFD::f64x2_pmax:
+                    case MultiByteFD::i32x4_trunc_sat_f32x4_s:
+                    case MultiByteFD::i32x4_trunc_sat_f32x4_u:
+                    case MultiByteFD::f32x4_convert_i32x4_s:
+                    case MultiByteFD::f32x4_convert_i32x4_u:
+                    case MultiByteFD::i32x4_trunc_sat_f64x2_s_zero:
+                    case MultiByteFD::i32x4_trunc_sat_f64x2_u_zero:
+                    case MultiByteFD::f64x2_convert_low_i32x4_s:
+                    case MultiByteFD::f64x2_convert_low_i32x4_u:
+                        instructions.push_back(Instruction { .opcode = realOpcode });
+                        break;
+                    default:
+                        fprintf(stderr, "Error: Unknown opcode 0x%x %d\n", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
                         throw WasmFile::InvalidWASMException();
                 }
                 break;
@@ -334,7 +597,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode });
                 break;
             default:
-                fprintf(stderr, "Error: Unknown opcode 0x%x\n", opcode);
+                fprintf(stderr, "Error: Unknown opcode 0x%x\n", static_cast<uint32_t>(opcode));
                 throw WasmFile::InvalidWASMException();
         }
     }

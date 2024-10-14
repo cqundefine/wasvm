@@ -1,22 +1,25 @@
 #pragma once
 
-#include <cstdint>
 #include <FileStream.h>
-#include <sys/time.h>
-#include <map>
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <format>
+#include <iostream>
+#include <map>
 #include <memory>
+#include <sys/time.h>
 #include <vector>
 
 #if defined(__linux__)
-#    define OS_LINUX
+    #define OS_LINUX
 #endif
 
 #if defined(__GLIBC__)
-#    define LIBC_GLIBC
-#    define LIBC_GLIBC_VERSION(maj, min) __GLIBC_PREREQ((maj), (min))
+    #define LIBC_GLIBC
+    #define LIBC_GLIBC_VERSION(maj, min) __GLIBC_PREREQ((maj), (min))
 #else
-#    define LIBC_GLIBC_VERSION(maj, min) 0
+    #define LIBC_GLIBC_VERSION(maj, min) 0
 #endif
 
 template <typename T>
@@ -50,29 +53,32 @@ inline void fill_buffer_with_random_data(uint8_t* data, size_t size)
     randomStream.read(data, size);
 #else
     srand(time(nullptr));
-    for(size_t i = 0; i < buffer_size; i++)
+    for (size_t i = 0; i < buffer_size; i++)
         data[i] = rand() % 256;
 #endif
-}
-
-template <typename T>
-std::map<uint32_t, T> vector_to_map_offset(const std::vector<T>& vector, uint32_t offset)
-{
-    std::map<uint32_t, T> map;
-    for (size_t i = 0; i < vector.size(); i++)
-    {
-        map[i + offset] = vector.at(i);
-    }
-    return map;
 }
 
 template <std::floating_point T>
 T typed_nan()
 {
-    if constexpr(std::is_same<T, float>())
+    if constexpr (std::is_same<T, float>())
         return std::nanf("");
-    else if constexpr(std::is_same<T, double>())
+    else if constexpr (std::is_same<T, double>())
         return std::nan("");
     else
         static_assert(false, "Unsupported type of NaN");
 }
+
+template <typename T>
+bool vector_contains(const std::vector<T>& v, T x)
+{
+    if (std::find(v.begin(), v.end(), x) != v.end())
+        return true;
+    return false;
+}
+
+using float32_t = float;
+using float64_t = double;
+
+using int128_t = __int128;
+using uint128_t = unsigned __int128;

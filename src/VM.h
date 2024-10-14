@@ -3,8 +3,9 @@
 #include <Module.h>
 #include <Parser.h>
 #include <Stream.h>
-#include <Value.h>
 #include <Util.h>
+#include <Value.h>
+#include <ValueStack.h>
 #include <WasmFile.h>
 #include <map>
 #include <stack>
@@ -27,19 +28,19 @@ public:
         }
     };
 
-    static void load_module(Ref<WasmFile::WasmFile> file);
+    static void load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current = false);
     static void register_module(const std::string& name, Ref<Module> module);
 
     static std::vector<Value> run_function(const std::string& name, const std::vector<Value>& args);
     static std::vector<Value> run_function(const std::string& mod, const std::string& name, const std::vector<Value>& args);
     static std::vector<Value> run_function(Ref<Module> mod, const std::string& name, const std::vector<Value>& args);
     static std::vector<Value> run_function(Ref<Module> mod, uint32_t index, const std::vector<Value>& args);
-    static std::vector<Value> run_function(Ref<Module> mod, const WasmFile::FunctionType& functionType, const WasmFile::Code& code, const std::vector<Value>& args);
-    
+    static std::vector<Value> run_function(Ref<Module> mod, Ref<Function> function, const std::vector<Value>& args);
+
     static Ref<Module> get_registered_module(const std::string& name);
 
     static Ref<Module> current_module() { return m_current_module; }
-    static uint8_t* memory() { return m_current_module->memories[0]->data; } // FIXME: Remove this after rewriting WASI
+    static uint8_t* memory() { return m_current_module->get_memory(0)->data; } // FIXME: Remove this after rewriting WASI
 
 private:
     static Value run_bare_code_returning(Ref<Module> mod, std::vector<Instruction> instructions, Type returnType);
@@ -55,7 +56,7 @@ private:
     template <typename ActualType, typename StackType>
     static void run_store_instruction(const WasmFile::MemArg& memArg);
     static void branch_to_label(uint32_t index);
-    static void call_function(uint32_t index);
+    static void call_function(Ref<Function> function);
 
     struct ImportLocation
     {

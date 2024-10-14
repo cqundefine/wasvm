@@ -12,22 +12,24 @@ namespace WasmFile
     Limits Limits::read_from_stream(Stream& stream)
     {
         uint8_t type = stream.read_little_endian<uint8_t>();
-        if (type == 0x00)
-        {
-            return {
-                .min = stream.read_leb<uint32_t>(),
-                .max = UINT32_MAX,
-            };
-        }
-        else if (type == 0x01)
-        {
-            return {
-                .min = stream.read_leb<uint32_t>(),
-                .max = stream.read_leb<uint32_t>(),
-            };
-        }
 
-        throw InvalidWASMException();
+        uint32_t min = stream.read_leb<uint32_t>();
+        uint32_t max;
+
+        if (type == 0x00)
+            max = UINT32_MAX;
+        else if (type == 0x01)
+            max = stream.read_leb<uint32_t>();
+        else
+            throw InvalidWASMException();
+
+        if (min > max)
+            throw InvalidWASMException();
+
+        return Limits {
+            .min = min,
+            .max = max,
+        };
     }
 
     MemArg MemArg::read_from_stream(Stream& stream)
@@ -40,8 +42,8 @@ namespace WasmFile
             align &= ~0x40;
             memoryIndex = stream.read_leb<uint32_t>();
         }
-        
-        return {
+
+        return MemArg {
             .align = align,
             .offset = stream.read_leb<uint32_t>(),
             .memoryIndex = memoryIndex,
@@ -57,7 +59,7 @@ namespace WasmFile
         std::vector<Type> params = stream.read_vec_with_function<Type, read_type_from_stream>();
         std::vector<Type> returns = stream.read_vec_with_function<Type, read_type_from_stream>();
 
-        return {
+        return FunctionType {
             .params = params,
             .returns = returns,
         };
@@ -99,12 +101,18 @@ namespace WasmFile
         }
         else if (type == 3)
         {
+            auto type = read_type_from_stream(stream);
+            auto mut = (GlobalMutability)stream.read_little_endian<uint8_t>();
+
+            if (mut != GlobalMutability::Constant && mut != GlobalMutability::Variable)
+                throw InvalidWASMException();
+
             return Import {
                 .type = ImportType::Global,
                 .environment = environment,
                 .name = name,
-                .globalType = read_type_from_stream(stream),
-                .globalMut = stream.read_leb<uint8_t>(),
+                .globalType = type,
+                .globalMut = mut,
             };
         }
         else
@@ -116,7 +124,7 @@ namespace WasmFile
 
     Table Table::read_from_stream(Stream& stream)
     {
-        return {
+        return Table {
             .refType = read_type_from_stream(stream),
             .limits = stream.read_typed<Limits>(),
         };
@@ -124,23 +132,29 @@ namespace WasmFile
 
     Memory Memory::read_from_stream(Stream& stream)
     {
-        return {
+        return Memory {
             .limits = stream.read_typed<Limits>(),
         };
     }
 
     Global Global::read_from_stream(Stream& stream)
     {
-        return {
-            .type = read_type_from_stream(stream),
-            .mut = stream.read_little_endian<uint8_t>(),
+        auto type = read_type_from_stream(stream);
+        auto mut = (GlobalMutability)stream.read_little_endian<uint8_t>();
+
+        if (mut != GlobalMutability::Constant && mut != GlobalMutability::Variable)
+            throw InvalidWASMException();
+
+        return Global {
+            .type = type,
+            .mut = mut,
             .initCode = parse(stream, s_currentWasmFile),
         };
     }
 
     Export Export::read_from_stream(Stream& stream)
     {
-        return {
+        return Export {
             .name = stream.read_typed<std::string>(),
             .type = (ImportType)stream.read_little_endian<uint8_t>(), // FIXME: Don't rely on casts
             .index = stream.read_leb<uint32_t>(),
@@ -153,7 +167,7 @@ namespace WasmFile
 
         if (type == 0)
         {
-            return {
+            return Element {
                 .type = type,
                 .table = 0,
                 .expr = parse(stream, s_currentWasmFile),
@@ -202,7 +216,7 @@ namespace WasmFile
                 std::vector<Instruction> index = parse(stream, s_currentWasmFile);
                 references.push_back(index);
             }
-            return {
+            return Element {
                 .type = type,
                 .table = 0,
                 .expr = expr,
@@ -275,7 +289,7 @@ namespace WasmFile
 
     Local Local::read_from_stream(Stream& stream)
     {
-        return {
+        return Local {
             .count = stream.read_leb<uint32_t>(),
             .type = read_type_from_stream(stream),
         };
@@ -288,7 +302,7 @@ namespace WasmFile
         size_t beforeLocals = stream.offset();
         std::vector<Local> locals = stream.read_vec<Local>();
 
-        return {
+        return Code {
             .locals = locals,
             .instructions = parse(stream, s_currentWasmFile),
         };
@@ -299,7 +313,7 @@ namespace WasmFile
         uint32_t type = stream.read_leb<uint32_t>();
         if (type == 0)
         {
-            return {
+            return Data {
                 .type = type,
                 .memoryIndex = 0,
                 .expr = parse(stream, s_currentWasmFile),
@@ -309,7 +323,7 @@ namespace WasmFile
         }
         else if (type == 1)
         {
-            return {
+            return Data {
                 .type = type,
                 .memoryIndex = (uint32_t)-1,
                 .expr = {},
@@ -319,7 +333,7 @@ namespace WasmFile
         }
         else if (type == 2)
         {
-            return {
+            return Data {
                 .type = type,
                 .memoryIndex = stream.read_leb<uint32_t>(),
                 .expr = parse(stream, s_currentWasmFile),
@@ -332,7 +346,6 @@ namespace WasmFile
             fprintf(stderr, "Unsupported data type: %d\n", type);
             throw InvalidWASMException();
         }
-
     }
 
     Ref<WasmFile> WasmFile::read_from_stream(Stream& stream)
@@ -355,74 +368,89 @@ namespace WasmFile
             throw InvalidWASMException();
         }
 
+        std::vector<Section> foundSections;
+
         while (!stream.eof())
         {
-            uint8_t tag = stream.read_little_endian<uint8_t>();
+            Section tag = (Section)stream.read_little_endian<uint8_t>();
             uint32_t size = stream.read_leb<uint32_t>();
 
             // printf("Section 0x%x: 0x%x bytes\n", tag, size);
+
+            if (vector_contains(foundSections, tag))
+                throw InvalidWASMException();
+            foundSections.push_back(tag);
 
             std::vector<uint8_t> section(size);
             stream.read((void*)section.data(), size);
 
             MemoryStream sectionStream((char*)section.data(), size);
-            if (tag == CustomSection)
+            if (tag == Section::Custom)
             {
                 // Silently ignore...
+                sectionStream.move_to(sectionStream.size());
             }
-            else if (tag == TypeSection)
+            else if (tag == Section::Type)
             {
                 wasm->functionTypes = sectionStream.read_vec<FunctionType>();
             }
-            else if (tag == ImportSection)
+            else if (tag == Section::Import)
             {
                 wasm->imports = sectionStream.read_vec<Import>();
             }
-            else if (tag == FunctionSection)
+            else if (tag == Section::Function)
             {
-                wasm->functionTypeIndexes = vector_to_map_offset(sectionStream.read_vec<uint32_t>(), wasm->get_import_count_of_type(ImportType::Function));
+                wasm->functionTypeIndexes = sectionStream.read_vec<uint32_t>();
             }
-            else if (tag == TableSection)
+            else if (tag == Section::Table)
             {
                 wasm->tables = sectionStream.read_vec<Table>();
             }
-            else if (tag == MemorySection)
+            else if (tag == Section::Memory)
             {
                 wasm->memories = sectionStream.read_vec<Memory>();
             }
-            else if (tag == GlobalSection)
+            else if (tag == Section::Global)
             {
                 wasm->globals = sectionStream.read_vec<Global>();
             }
-            else if (tag == ExportSection)
+            else if (tag == Section::Export)
             {
                 wasm->exports = sectionStream.read_vec<Export>();
             }
-            else if (tag == StartSection)
+            else if (tag == Section::Start)
             {
                 wasm->startFunction = sectionStream.read_leb<uint32_t>();
             }
-            else if (tag == ElementSection)
+            else if (tag == Section::Element)
             {
                 wasm->elements = sectionStream.read_vec<Element>();
             }
-            else if (tag == CodeSection)
+            else if (tag == Section::Code)
             {
-                wasm->codeBlocks = vector_to_map_offset(sectionStream.read_vec<Code>(), wasm->get_import_count_of_type(ImportType::Function));
+                wasm->codeBlocks = sectionStream.read_vec<Code>();
             }
-            else if (tag == DataSection)
+            else if (tag == Section::Data)
             {
                 wasm->dataBlocks = sectionStream.read_vec<Data>();
             }
-            else if (tag == DataCountSection)
+            else if (tag == Section::DataCount)
             {
                 // Ignore it...
+                sectionStream.read_leb<uint32_t>();
             }
             else
             {
-                fprintf(stderr, "Warning: Unknown section: %d\n", tag);
+                fprintf(stderr, "Warning: Unknown section: %d\n", static_cast<int>(tag));
+                throw InvalidWASMException();
             }
+
+            if (!sectionStream.eof())
+                throw InvalidWASMException();
         }
+
+        if (wasm->functionTypeIndexes.size() != wasm->codeBlocks.size())
+            throw InvalidWASMException();
 
         s_currentWasmFile = nullptr;
         return wasm;
@@ -447,7 +475,6 @@ namespace WasmFile
             if (import.type == type)
                 count++;
         return count;
-
     }
 
     BlockType BlockType::read_from_stream(Stream& stream)

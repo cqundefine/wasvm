@@ -1,11 +1,11 @@
-#include <cassert>
-#include <ctime>
-#include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
 #include <Util.h>
 #include <VM.h>
 #include <WASI.h>
+#include <cassert>
+#include <cstring>
+#include <ctime>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace WASI
 {
@@ -28,11 +28,10 @@ namespace WASI
             case S_IFIFO:
             default:
                 return FileType::Unknown;
-
         }
     }
 
-    #define DEFINE_WASI_CALL(x) std::vector<Value> wasi$##x(const std::vector<Value>& args)
+#define DEFINE_WASI_CALL(x) std::vector<Value> wasi$##x(const std::vector<Value>& args)
 
     DEFINE_WASI_CALL(args_get)
     {
@@ -118,7 +117,7 @@ namespace WASI
     {
         fprintf(stderr, "Warning: fd_prestat_dir_name not implemented: %d\n", std::get<uint32_t>(args[0]));
 
-        if(std::get<uint32_t>(args[0]) != 3)
+        if (std::get<uint32_t>(args[0]) != 3)
             return { (uint32_t)8 };
 
         assert(std::get<uint32_t>(args[2]) >= 1);
@@ -132,9 +131,9 @@ namespace WASI
     {
         fprintf(stderr, "Warning: fd_prestat_get not implemented: %d\n", std::get<uint32_t>(args[0]));
 
-        if(std::get<uint32_t>(args[0]) != 3)
+        if (std::get<uint32_t>(args[0]) != 3)
             return { (uint32_t)8 };
-        
+
         PreStat preStat {
             .pr_type = PreOpenType::Dir,
             .u = {
@@ -155,7 +154,7 @@ namespace WASI
 
         for (uint32_t i = 0; i < std::get<uint32_t>(args[2]); i++)
             written += (uint32_t)write(std::get<uint32_t>(args[0]), (VM::memory() + iov[i].pointer), iov[i].length);
-        
+
         memcpy(VM::memory() + std::get<uint32_t>(args[3]), &written, sizeof(written));
 
         return { written };
@@ -177,7 +176,7 @@ namespace WASI
         exit(std::get<uint32_t>(args[0]));
         assert(false);
     }
-    
+
     DEFINE_WASI_CALL(random_get)
     {
         fill_buffer_with_random_data(VM::memory() + std::get<uint32_t>(args[0]), std::get<uint32_t>(args[1]));
@@ -206,7 +205,7 @@ namespace WASI
         size_t index = 0;
         bool result = true;
         auto check_types = [&](auto&&... types) {
-            (void)std::initializer_list<int>{((result = result && verify_type(args[index], types)), ++index, 0)...};
+            (void)std::initializer_list<int> { ((result = result && verify_type(args[index], types)), ++index, 0)... };
         };
 
         std::apply(check_types, types);
@@ -217,16 +216,16 @@ namespace WASI
 
     std::vector<Value> run_wasi_call(const std::string& name, const std::vector<Value>& args)
     {
-        #define WASI_CALL(x, ...) \
-            if (name == #x) \
-            { \
-                verify_args<__VA_ARGS__>(args); \
-                return wasi$##x(args); \
-            }
+#define WASI_CALL(x, ...)               \
+    if (name == #x)                     \
+    {                                   \
+        verify_args<__VA_ARGS__>(args); \
+        return wasi$##x(args);          \
+    }
 
         ENUMERATE_WASI_CALL(WASI_CALL)
 
-        #undef WASI_CALL
+#undef WASI_CALL
 
         fprintf(stderr, "Error: Invalid WASI call: %s\n", name.c_str());
         throw Trap();

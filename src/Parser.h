@@ -58,15 +58,20 @@ struct TableCopyArguments
     uint32_t source;
 };
 
+struct LoadStoreLaneArguments
+{
+    WasmFile::MemArg memArg;
+    uint8_t lane;
+};
+
 struct NoneArguments
 {
-
 };
 
 struct Instruction
 {
     Opcode opcode;
-    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, MemoryInitArguments, MemoryCopyArguments, TableInitArguments, TableCopyArguments, std::vector<uint8_t>, WasmFile::MemArg, Type, Label, uint32_t, uint64_t, float, double> arguments;
+    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, MemoryInitArguments, MemoryCopyArguments, TableInitArguments, TableCopyArguments, LoadStoreLaneArguments, std::vector<uint8_t>, WasmFile::MemArg, Type, Label, uint8_t, uint32_t, uint64_t, float, double, uint128_t> arguments;
 };
 
 std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile);

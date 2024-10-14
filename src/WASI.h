@@ -1,23 +1,23 @@
 #pragma once
 
-#include <cstdint>
-#include <sys/stat.h>
-#include <string>
-#include <vector>
 #include <Value.h>
+#include <cstdint>
+#include <string>
+#include <sys/stat.h>
+#include <vector>
 
-#define ENUMERATE_WASI_CALL(x) \
-    x(args_get, uint32_t, uint32_t) \
-    x(args_sizes_get, uint32_t, uint32_t) \
-    x(clock_time_get, uint32_t, uint64_t, uint32_t) \
-    x(environ_get, uint32_t, uint32_t) \
-    x(environ_sizes_get, uint32_t, uint32_t) \
-    x(fd_fdstat_get, uint32_t, uint32_t) \
-    x(fd_prestat_dir_name, uint32_t, uint32_t, uint32_t) \
-    x(fd_prestat_get, uint32_t, uint32_t) \
-    x(fd_write, uint32_t, uint32_t, uint32_t, uint32_t) \
+#define ENUMERATE_WASI_CALL(x)                             \
+    x(args_get, uint32_t, uint32_t)                        \
+    x(args_sizes_get, uint32_t, uint32_t)                  \
+    x(clock_time_get, uint32_t, uint64_t, uint32_t)        \
+    x(environ_get, uint32_t, uint32_t)                     \
+    x(environ_sizes_get, uint32_t, uint32_t)               \
+    x(fd_fdstat_get, uint32_t, uint32_t)                   \
+    x(fd_prestat_dir_name, uint32_t, uint32_t, uint32_t)   \
+    x(fd_prestat_get, uint32_t, uint32_t)                  \
+    x(fd_write, uint32_t, uint32_t, uint32_t, uint32_t)    \
     x(poll_oneoff, uint32_t, uint32_t, uint32_t, uint32_t) \
-    x(proc_exit, uint32_t) \
+    x(proc_exit, uint32_t)                                 \
     x(random_get, uint32_t, uint32_t)
 
 namespace WASI
@@ -137,4 +137,3 @@ namespace WASI
 
     std::vector<Value> run_wasi_call(const std::string& name, const std::vector<Value>& args);
 }
-

@@ -1,5 +1,7 @@
+#include <Type.h>
 #include <Value.h>
 #include <cassert>
+#include <format>
 
 template <typename T>
 const char* value_type_name = "invalid";
@@ -17,30 +19,33 @@ template <>
 const char* value_type_name<double> = "f64";
 
 template <>
+const char* value_type_name<uint128_t> = "v128";
+
+template <>
 const char* value_type_name<Reference> = "funcref/externref";
 
 template <>
 const char* value_type_name<Label> = "label";
 
-const char* get_value_variant_name_by_index(size_t index)
+std::string value_to_string(Value value)
 {
-    switch (index)
+    if (std::holds_alternative<uint32_t>(value))
+        return std::format("{}({})", get_type_name(get_value_type(value)), std::get<uint32_t>(value));
+    if (std::holds_alternative<uint64_t>(value))
+        return std::format("{}({})", get_type_name(get_value_type(value)), std::get<uint64_t>(value));
+    if (std::holds_alternative<float>(value))
+        return std::format("{}({})", get_type_name(get_value_type(value)), std::get<float>(value));
+    if (std::holds_alternative<double>(value))
+        return std::format("{}({})", get_type_name(get_value_type(value)), std::get<double>(value));
+    if (std::holds_alternative<uint128_t>(value))
+        return std::format("{}({})", get_type_name(get_value_type(value)), std::get<uint128_t>(value));
+    if (std::holds_alternative<Reference>(value))
     {
-        case 0:
-            return "i32";
-        case 1:
-            return "i64";
-        case 2:
-            return "f32";
-        case 3:
-            return "f64";
-        case 4:
-            return "funcref/externref";
-        case 5:
-            return "label";
-        default:
-            assert(false);
+        uint32_t index = std::get<Reference>(value).index;
+        if (index == UINT32_MAX)
+            return std::format("{}(null)", get_type_name(get_value_type(value)));
+        else
+            return std::format("{}({})", get_type_name(get_value_type(value)), index);
     }
-
-    return "?????";
+    assert(false);
 }

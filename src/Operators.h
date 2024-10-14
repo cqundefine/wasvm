@@ -1,30 +1,38 @@
 #pragma once
 
+#include <SIMD.h>
+#include <Util.h>
+#include <Value.h>
 #include <bit>
 #include <cassert>
 #include <cmath>
-#include <Util.h>
-#include <Value.h>
 
-#define GENERIC_BINARY_OPERATION_OPERATOR(name, op) \
-    template <typename LhsType, typename RhsType>   \
-    Value operation_##name(LhsType a, RhsType b)    \
-    {                                               \
-        return (ToValueType<LhsType>)(a op b);      \
+#define GENERIC_BINARY_OPERATION_OPERATOR(name, op)         \
+    template <typename LhsType, typename RhsType>           \
+    Value operation_##name(LhsType a, RhsType b)            \
+    {                                                       \
+        return std::bit_cast<ToValueType<LhsType>>(a op b); \
     }
 
-#define GENERIC_BINARY_OPERATION_FUNCTION(name, function) \
-    template <typename LhsType, typename RhsType>         \
-    Value operation_##name(LhsType a, RhsType b)          \
-    {                                                     \
-        return (ToValueType<LhsType>)function(a, b);      \
+#define GENERIC_BINARY_OPERATION_FUNCTION(name, function)           \
+    template <typename LhsType, typename RhsType>                   \
+    Value operation_##name(LhsType a, RhsType b)                    \
+    {                                                               \
+        return std::bit_cast<ToValueType<LhsType>>(function(a, b)); \
     }
 
-#define GENERIC_COMPARISON_OPERATION_OPERATOR(name, op) \
-    template <typename LhsType, typename RhsType>       \
-    Value operation_##name(LhsType a, RhsType b)        \
-    {                                                   \
-        return (uint32_t)(a op b);                      \
+#define GENERIC_COMPARISON_OPERATION_OPERATOR(name, op)    \
+    template <typename LhsType, typename RhsType>          \
+        requires(!IsVector<LhsType> && !IsVector<RhsType>) \
+    Value operation_##name(LhsType a, RhsType b)           \
+    {                                                      \
+        return (uint32_t)(a op b);                         \
+    }                                                      \
+    template <typename LhsType, typename RhsType>          \
+        requires(IsVector<LhsType> && IsVector<RhsType>)   \
+    Value operation_##name(LhsType a, RhsType b)           \
+    {                                                      \
+        return std::bit_cast<uint128_t>(a op b);           \
     }
 
 GENERIC_BINARY_OPERATION_OPERATOR(add, +);
@@ -44,6 +52,9 @@ GENERIC_COMPARISON_OPERATION_OPERATOR(lt, <);
 GENERIC_COMPARISON_OPERATION_OPERATOR(gt, >);
 GENERIC_COMPARISON_OPERATION_OPERATOR(le, <=);
 GENERIC_COMPARISON_OPERATION_OPERATOR(ge, >=);
+
+GENERIC_BINARY_OPERATION_FUNCTION(vector_min, vector_min);
+GENERIC_BINARY_OPERATION_FUNCTION(vector_max, vector_max);
 
 template <typename LhsType, typename RhsType>
 Value operation_min(LhsType a, RhsType b)
@@ -120,6 +131,8 @@ GENERIC_UNARY_OPERATION_FUNCTION(trunc, std::trunc);
 GENERIC_UNARY_OPERATION_FUNCTION(nearest, std::nearbyint);
 GENERIC_UNARY_OPERATION_FUNCTION(sqrt, std::sqrt);
 
+GENERIC_UNARY_OPERATION_FUNCTION(vector_abs, vector_abs);
+
 template <typename T>
 Value operation_eqz(T a)
 {
@@ -130,7 +143,7 @@ template <typename TruncatedType, typename T>
 Value operation_trunc(T a)
 {
     static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "run_truncate_instruction is meant for floating point to integer conversions");
-    
+
     if (std::isnan(a) || std::isinf(a))
         throw Trap();
 
@@ -149,10 +162,10 @@ template <typename TruncatedType, typename T>
 Value operation_trunc_sat(T a)
 {
     static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "run_truncate_instruction is meant for floating point to integer conversions");
-    
+
     if (std::isnan(a))
         return (ToValueType<TruncatedType>)0;
-    
+
     if (std::isinf(a) && a < 0)
         return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().min();
 

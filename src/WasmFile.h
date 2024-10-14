@@ -14,21 +14,21 @@ namespace WasmFile
 {
     constexpr uint32_t WASM_SIGNATURE = 0x6d736100;
 
-    enum Section
+    enum class Section
     {
-        CustomSection = 0,
-        TypeSection = 1,
-        ImportSection = 2,
-        FunctionSection = 3,
-        TableSection = 4,
-        MemorySection = 5,
-        GlobalSection = 6,
-        ExportSection = 7,
-        StartSection = 8,
-        ElementSection = 9,
-        CodeSection = 10,
-        DataSection = 11,
-        DataCountSection = 12,
+        Custom = 0,
+        Type = 1,
+        Import = 2,
+        Function = 3,
+        Table = 4,
+        Memory = 5,
+        Global = 6,
+        Export = 7,
+        Start = 8,
+        Element = 9,
+        Code = 10,
+        Data = 11,
+        DataCount = 12,
     };
 
     struct InvalidWASMException : public std::exception
@@ -77,6 +77,12 @@ namespace WasmFile
         Global
     };
 
+    enum class GlobalMutability
+    {
+        Constant = 0,
+        Variable = 1,
+    };
+
     struct Import
     {
         ImportType type;
@@ -92,7 +98,7 @@ namespace WasmFile
         Limits memoryLimits;
 
         Type globalType;
-        uint8_t globalMut;
+        GlobalMutability globalMut;
 
         static Import read_from_stream(Stream& stream);
     };
@@ -115,7 +121,7 @@ namespace WasmFile
     struct Global
     {
         Type type;
-        uint8_t mut;
+        GlobalMutability mut;
         std::vector<Instruction> initCode;
 
         static Global read_from_stream(Stream& stream);
@@ -180,14 +186,14 @@ namespace WasmFile
     {
         std::vector<FunctionType> functionTypes;
         std::vector<Import> imports;
-        std::map<uint32_t, uint32_t> functionTypeIndexes;
+        std::vector<uint32_t> functionTypeIndexes;
         std::vector<Table> tables;
         std::vector<Memory> memories;
         std::vector<Global> globals;
         std::vector<Export> exports;
         uint32_t startFunction = UINT32_MAX;
         std::vector<Element> elements;
-        std::map<uint32_t, Code> codeBlocks;
+        std::vector<Code> codeBlocks;
         std::vector<Data> dataBlocks;
 
         static Ref<WasmFile> read_from_stream(Stream& stream);

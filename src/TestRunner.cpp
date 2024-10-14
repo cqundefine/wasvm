@@ -1,10 +1,11 @@
 #include <FileStream.h>
 #include <TestRunner.h>
 #include <VM.h>
+#include <bit>
 #include <fstream>
+#include <math.h>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
-#include <math.h>
 
 bool float_equals(float a, float b)
 {
@@ -20,22 +21,102 @@ bool double_equals(double a, double b)
     return a == b;
 }
 
-float parse_float(const std::string& value)
+std::optional<Value> parse_value(nlohmann::json json)
 {
-    // FIXME: NaN types
-    if (value.starts_with("nan"))
-        return std::nanf("");
-    uint32_t valueInt = (uint32_t)std::stoull(value);
-    return *(float*)&valueInt;
+    try
+    {
+        std::string type = json["type"];
+        if (type == "v128")
+        {
+            std::string laneType = json["lane_type"];
+            uint128_t value = 0;
+            uint8_t shiftCount;
+            if (laneType == "i8")
+                shiftCount = 8;
+            else if (laneType == "i16")
+                shiftCount = 16;
+            else if (laneType == "i32" || laneType == "f32")
+                shiftCount = 32;
+            else if (laneType == "i64" || laneType == "f64")
+                shiftCount = 64;
+            else
+                return {};
+
+            for (const auto& lane : json["value"])
+            {
+                value <<= shiftCount;
+                value |= static_cast<uint64_t>(std::stoull(lane.get<std::string>()));
+            }
+            return value;
+        }
+        else
+        {
+            std::string value = json["value"];
+
+            if (type == "i32")
+                return static_cast<uint32_t>(std::stoull(value));
+            if (type == "i64")
+                return static_cast<uint64_t>(std::stoull(value));
+
+            if (type == "f32")
+            {
+                if (value.starts_with("nan"))
+                    return typed_nan<float>();
+                uint32_t rawValue = static_cast<uint32_t>(std::stoull(value));
+                return std::bit_cast<float>(rawValue);
+            }
+            if (type == "f64")
+            {
+                if (value.starts_with("nan"))
+                    return typed_nan<double>();
+                uint64_t rawValue = static_cast<uint64_t>(std::stoull(value));
+                return std::bit_cast<double>(rawValue);
+            }
+
+            if (type == "funcref")
+                return Reference { ReferenceType::Function, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
+            if (type == "externref")
+                return Reference { ReferenceType::Extern, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
+        }
+
+        return {};
+    }
+    catch (const std::invalid_argument& e)
+    {
+        return {};
+    }
 }
 
-double parse_double(const std::string& value)
+bool compare_values(Value a, Value b)
 {
-    // FIXME: NaN types
-    if (value.starts_with("nan"))
-        return std::nan("");
-    uint64_t valueInt = (uint64_t)std::stoull(value);
-    return *(double*)&valueInt;
+    if (a.index() != b.index())
+        return false;
+
+    if (std::holds_alternative<uint32_t>(a))
+        return std::get<uint32_t>(a) == std::get<uint32_t>(b);
+    if (std::holds_alternative<uint64_t>(a))
+        return std::get<uint64_t>(a) == std::get<uint64_t>(b);
+
+    if (std::holds_alternative<float>(a))
+        return float_equals(std::get<float>(a), std::get<float>(b));
+    if (std::holds_alternative<double>(a))
+        return double_equals(std::get<double>(a), std::get<double>(b));
+
+    if (std::holds_alternative<uint128_t>(a))
+        return std::get<uint128_t>(a) == std::get<uint128_t>(b);
+
+    if (std::holds_alternative<Reference>(a))
+    {
+        auto refA = std::get<Reference>(a);
+        auto refB = std::get<Reference>(b);
+
+        if (refA.type != refB.type)
+            return false;
+
+        return refA.index == refB.index;
+    }
+
+    assert(false);
 }
 
 std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, uint32_t line, nlohmann::json action)
@@ -46,40 +127,17 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, 
         std::vector<Value> args;
         for (const auto& arg : action["args"])
         {
-            std::string argType = arg["type"];
-            std::string argValue = arg["value"];
-            if (argType == "i32")
-            {
-                args.push_back((uint32_t)std::stoull(argValue.c_str()));
-            }
-            else if (argType == "i64")
-            {
-                args.push_back((uint64_t)std::stoull(argValue.c_str()));
-            }
-            else if (argType == "f32")
-            {
-                uint32_t rawValue = (uint32_t)std::stoull(argValue.c_str());
-                args.push_back(*(float*)&rawValue);
-            }
-            else if (argType == "f64")
-            {
-                uint64_t rawValue = (uint64_t)std::stoull(argValue.c_str());
-                args.push_back(*(double*)&rawValue);
-            }
-            else if (argType == "funcref")
-            {
-                args.push_back(Reference { ReferenceType::Function, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
-            }
-            else if (argType == "externref")
-            {
-                args.push_back(Reference { ReferenceType::Extern, argValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(argValue.c_str()) });
-            }
-            else
+            auto value = parse_value(arg);
+            if (!value.has_value())
             {
                 stats.skipped++;
                 failed = true;
-                printf("%s/%u skipped: unsupported argument type: %s\n", path, line, argType.c_str());
+                printf("%s/%u skipped: failed to parse argument of type: %s\n", path, line, arg["type"].get<std::string>().c_str());
                 break;
+            }
+            else
+            {
+                args.push_back(value.value());
             }
         }
 
@@ -99,10 +157,10 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, 
             mod = VM::get_registered_module(action["module"]);
         else
             mod = VM::current_module();
-        
+
         WasmFile::Export exp = mod->wasmFile->find_export_by_name(action["field"]);
         assert(exp.type == WasmFile::ImportType::Global);
-        return { mod->globals[exp.index]->value };
+        return { mod->get_global(exp.index)->value };
     }
     else
     {
@@ -228,7 +286,7 @@ TestStats run_tests(const char* path)
                 continue;
             }
 
-            if(failed)
+            if (failed)
                 continue;
 
             const auto& expectedValues = command["expected"];
@@ -242,147 +300,20 @@ TestStats run_tests(const char* path)
 
             for (size_t i = 0; i < expectedValues.size(); i++)
             {
-                std::string expectedType = expectedValues[i]["type"];
-                std::string expectedValue = expectedValues[i]["value"];
-                try
-                {
-                    if (expectedType == "i32")
-                    {
-                        if (!std::holds_alternative<uint32_t>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected i32\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if (std::stoull(expectedValue) != std::get<uint32_t>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected value %u, expected %s\n", path, line, i, std::get<uint32_t>(returnValues[i]), expectedValue.c_str());
-                            break;
-                        }
-                    }
-                    else if (expectedType == "i64")
-                    {
-                        if (!std::holds_alternative<uint64_t>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected i64\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if (std::stoull(expectedValue) != std::get<uint64_t>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected value %lu, expected %s\n", path, line, i, std::get<uint64_t>(returnValues[i]), expectedValue.c_str());
-                            break;
-                        }
-                    }
-                    else if (expectedType == "f32")
-                    {
-                        if (!std::holds_alternative<float>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected f32\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if (!float_equals(parse_float(expectedValue), std::get<float>(returnValues[i])))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected value %f, expected %f\n", path, line, i, std::get<float>(returnValues[i]), parse_float(expectedValue));
-                            break;
-                        }
-                    }
-                    else if (expectedType == "f64")
-                    {
-                        if (!std::holds_alternative<double>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected f64\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if (!double_equals(parse_double(expectedValue), std::get<double>(returnValues[i])))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected value %lf, expected %lf\n", path, line, i, std::get<double>(returnValues[i]), parse_double(expectedValue));
-                            break;
-                        }
-                    }
-                    else if (expectedType == "funcref")
-                    {
-                        if (!std::holds_alternative<Reference>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected funcref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if (std::get<Reference>(returnValues[i]).type != ReferenceType::Function)
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected funcref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if ((expectedValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(expectedValue)) != std::get<Reference>(returnValues[i]).index)
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected value %d, expected %s\n", path, line, i, std::get<Reference>(returnValues[i]).index, expectedValue.c_str());
-                            break;
-                        }
-                    }
-                    else if (expectedType == "externref")
-                    {
-                        if (!std::holds_alternative<Reference>(returnValues[i]))
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected externref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if (std::get<Reference>(returnValues[i]).type != ReferenceType::Extern)
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected type %s, expected externref\n", path, line, i, get_value_variant_name_by_index(returnValues[i].index()));
-                            break;
-                        }
-
-                        if ((expectedValue == "null" ? UINT32_MAX : (uint32_t)std::stoull(expectedValue)) != std::get<Reference>(returnValues[i]).index)
-                        {
-                            stats.failed++;
-                            failed = true;
-                            printf("%s/%u failed: return value %zu has unexpected value %d, expected %s\n", path, line, i, std::get<Reference>(returnValues[i]).index, expectedValue.c_str());
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        stats.skipped++;
-                        failed = true;
-                        printf("%s/%u skipped: unsupported return type: %s\n", path, line, expectedType.c_str());
-                        break;
-                    }
-                }
-                catch (const std::invalid_argument& e)
+                auto maybeExpectedValue = parse_value(expectedValues[i]);
+                if (!maybeExpectedValue.has_value())
                 {
                     stats.skipped++;
                     failed = true;
-                    printf("%s/%u skipped: failed to parse return value %zu: %s\n", path, line, i, expectedValue.c_str());
+                    printf("%s/%u skipped: failed to parse return value of type: %s\n", path, line, expectedValues[i]["type"].get<std::string>().c_str());
+                    break;
+                }
+                auto expectedValue = maybeExpectedValue.value();
+                if (!compare_values(returnValues[i], expectedValue))
+                {
+                    stats.failed++;
+                    failed = true;
+                    printf("%s/%u failed: return value %zu has unexpected value %s, expected %s\n", path, line, i, value_to_string(returnValues[i]).c_str(), value_to_string(expectedValue).c_str());
                     break;
                 }
             }
@@ -418,6 +349,67 @@ TestStats run_tests(const char* path)
                 printf("%s/%u passed\n", path, line);
             }
         }
+        // else if (type == "assert_invalid" || type == "assert_malformed")
+        // {
+        //     if(command["module_type"] != "binary")
+        //     {
+        //         // We are a VM, not a compiler
+        //         continue;
+        //     }
+
+        //     stats.total++;
+
+        //     FileStream fileStream(command["filename"].get<std::string>().c_str());
+        //     try
+        //     {
+        //         auto file = WasmFile::WasmFile::read_from_stream(fileStream);
+        //         // FIXME: We probably shouldn't try to instantiate those
+        //         VM::load_module(file, true);
+
+        //         stats.failed++;
+        //         printf("%s/%u expected to not load, loaded\n", path, line);
+        //     }
+        //     catch (WasmFile::InvalidWASMException e)
+        //     {
+        //         stats.passed++;
+        //         printf("%s/%u passed\n", path, line);
+        //     }
+        //     catch (Trap e)
+        //     {
+        //         stats.passed++;
+        //         printf("%s/%u passed\n", path, line);
+        //     }
+        // }
+        // else if (type == "assert_uninstantiable" || type == "assert_unlinkable")
+        // {
+        //     if(command["module_type"] != "binary")
+        //     {
+        //         // We are a VM, not a compiler
+        //         continue;
+        //     }
+
+        //     stats.total++;
+
+        //     FileStream fileStream(command["filename"].get<std::string>().c_str());
+        //     try
+        //     {
+        //         auto file = WasmFile::WasmFile::read_from_stream(fileStream);
+        //         VM::load_module(file, true);
+
+        //         stats.failed++;
+        //         printf("%s/%u expected to not instantiate, instantiated\n", path, line);
+        //     }
+        //     catch (WasmFile::InvalidWASMException e)
+        //     {
+        //         stats.failed++;
+        //         printf("%s/%u failed: module is invalid\n", path, line);
+        //     }
+        //     catch (Trap e)
+        //     {
+        //         stats.passed++;
+        //         printf("%s/%u passed\n", path, line);
+        //     }
+        // }
         else
         {
             // printf("command type unsupported: %s\n", type.c_str());
