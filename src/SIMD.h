@@ -44,29 +44,29 @@ concept IsVector = requires(T a) {
 template <typename T>
 using VectorElement = decltype(std::declval<T>()[0]);
 
-#define GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(name, function)          \
-    template <typename T>                                                   \
-        requires(IsVector<T>)                                               \
-    T vector_##name(T a, T b)                                               \
-    {                                                                       \
-        T result;                                                           \
-        for (size_t i = 0; i < sizeof(T) / sizeof(VectorElement<T>); ++i)   \
-            result[i] = function(a[i], b[i]);                               \
-        return result;                                                      \
+#define GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(name, function)        \
+    template <typename T>                                                 \
+        requires(IsVector<T>)                                             \
+    T vector_##name(T a, T b)                                             \
+    {                                                                     \
+        T result;                                                         \
+        for (size_t i = 0; i < sizeof(T) / sizeof(VectorElement<T>); ++i) \
+            result[i] = function(a[i], b[i]);                             \
+        return result;                                                    \
     }
 
 GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(min, std::min);
 GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(max, std::max);
 
-#define GENERIC_VECTOR_UNARY_INSTRUCTION_FUNCTION(name, function)           \
-    template <typename T>                                                   \
-        requires(IsVector<T>)                                               \
-    T vector_##name(T vec)                                                  \
-    {                                                                       \
-        T result;                                                           \
-        for (size_t i = 0; i < sizeof(T) / sizeof(VectorElement<T>); ++i)   \
-            result[i] = function(vec[i]);                                   \
-        return result;                                                      \
+#define GENERIC_VECTOR_UNARY_INSTRUCTION_FUNCTION(name, function)         \
+    template <typename T>                                                 \
+        requires(IsVector<T>)                                             \
+    T vector_##name(T vec)                                                \
+    {                                                                     \
+        T result;                                                         \
+        for (size_t i = 0; i < sizeof(T) / sizeof(VectorElement<T>); ++i) \
+            result[i] = function(vec[i]);                                 \
+        return result;                                                    \
     }
 
 GENERIC_VECTOR_UNARY_INSTRUCTION_FUNCTION(abs, std::abs);

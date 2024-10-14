@@ -53,9 +53,5 @@ int main(int argc, char** argv)
         VM::load_module(file);
 
         std::vector<Value> returnValues = VM::run_function(parser.get("-f"), {});
-
-        // assert(returnValues.size() == 1);
-        // assert(std::holds_alternative<uint32_t>(returnValues[0]));
-        // printf("Result is %d\n", std::get<uint32_t>(returnValues[0]));
     }
 }

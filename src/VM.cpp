@@ -186,9 +186,8 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
     }
 
     m_frame->stack.push(Label {
-        .continuation = (uint32_t)function->code.instructions.size(),
-        .arity = (uint32_t)function->type.returns.size(),
-        .beginType = LabelBeginType::Other });
+        .continuation = static_cast<uint32_t>(function->code.instructions.size()),
+        .arity = static_cast<uint32_t>(function->type.returns.size()) });
 
     while (m_frame->ip < function->code.instructions.size())
     {

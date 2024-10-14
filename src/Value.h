@@ -12,18 +12,10 @@ struct Trap
 {
 };
 
-enum class LabelBeginType
-{
-    Else,
-    Other,
-    LoopInvalid
-};
-
 struct Label
 {
     uint32_t continuation;
     uint32_t arity;
-    LabelBeginType beginType;
 };
 
 enum class ReferenceType

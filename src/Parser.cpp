@@ -3,10 +3,17 @@
 #include <cassert>
 #include <stack>
 
+struct BlockBeginInfo
+{
+    uint32_t begin;
+    uint32_t arity;
+    bool isFake;
+};
+
 std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
 {
     std::vector<Instruction> instructions;
-    std::stack<std::tuple<uint32_t, uint32_t, LabelBeginType>> blockBeginStack;
+    std::stack<BlockBeginInfo> blockBeginStack;
 
     while (!stream.eof())
     {
@@ -16,19 +23,24 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
         {
             case Opcode::block: {
                 WasmFile::BlockType blockType = stream.read_typed<WasmFile::BlockType>();
-                blockBeginStack.push({ instructions.size(), blockType.get_return_types(wasmFile).size(), LabelBeginType::Other });
+                blockBeginStack.push(BlockBeginInfo {
+                    .begin = static_cast<uint32_t>(instructions.size()),
+                    .arity = static_cast<uint32_t>(blockType.get_return_types(wasmFile).size()),
+                    .isFake = false });
 
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = BlockLoopArguments { .blockType = blockType } });
                 break;
             }
             case Opcode::loop: {
                 WasmFile::BlockType blockType = stream.read_typed<WasmFile::BlockType>();
-                blockBeginStack.push({ 0, 0, LabelBeginType::LoopInvalid });
+                blockBeginStack.push(BlockBeginInfo { 
+                    .begin = 0,
+                    .arity = 0,
+                    .isFake = true });
 
                 Label label = {
-                    .continuation = (uint32_t)instructions.size(),
-                    .arity = (uint32_t)blockType.get_param_types(wasmFile).size(),
-                    .beginType = LabelBeginType::Other
+                    .continuation = static_cast<uint32_t>(instructions.size()),
+                    .arity = static_cast<uint32_t>(blockType.get_param_types(wasmFile).size()),
                 };
 
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = BlockLoopArguments { .blockType = blockType, .label = label } });
@@ -36,7 +48,10 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             }
             case Opcode::if_: {
                 WasmFile::BlockType blockType = stream.read_typed<WasmFile::BlockType>();
-                blockBeginStack.push({ instructions.size(), blockType.get_return_types(wasmFile).size(), LabelBeginType::Other });
+                blockBeginStack.push(BlockBeginInfo {
+                    .begin = static_cast<uint32_t>(instructions.size()),
+                    .arity = static_cast<uint32_t>(blockType.get_return_types(wasmFile).size()),
+                    .isFake = false });
 
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = IfArguments { .blockType = blockType } });
                 break;
@@ -46,9 +61,10 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                     throw WasmFile::InvalidWASMException();
 
                 auto begin = blockBeginStack.top();
+                auto& beginInstruction = instructions[begin.begin];
 
-                assert(std::holds_alternative<IfArguments>(instructions[std::get<0>(begin)].arguments));
-                std::get<IfArguments>(instructions[std::get<0>(begin)].arguments).elseLocation = instructions.size();
+                assert(std::holds_alternative<IfArguments>(beginInstruction.arguments));
+                std::get<IfArguments>(beginInstruction.arguments).elseLocation = instructions.size();
 
                 instructions.push_back(Instruction { .opcode = opcode });
                 break;
@@ -61,21 +77,21 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
 
                 auto begin = blockBeginStack.top();
                 blockBeginStack.pop();
+                auto& beginInstruction = instructions[begin.begin];
 
-                if (std::get<2>(begin) == LabelBeginType::LoopInvalid)
+                if (begin.isFake)
                     break;
 
                 Label label = {
-                    .continuation = (uint32_t)instructions.size(),
-                    .arity = std::get<1>(begin),
-                    .beginType = std::get<2>(begin)
+                    .continuation = static_cast<uint32_t>(instructions.size()),
+                    .arity = begin.arity,
                 };
 
-                if (std::holds_alternative<BlockLoopArguments>(instructions[std::get<0>(begin)].arguments))
-                    std::get<BlockLoopArguments>(instructions[std::get<0>(begin)].arguments).label = label;
-                else if (std::holds_alternative<IfArguments>(instructions[std::get<0>(begin)].arguments))
+                if (std::holds_alternative<BlockLoopArguments>(beginInstruction.arguments))
+                    std::get<BlockLoopArguments>(beginInstruction.arguments).label = label;
+                else if (std::holds_alternative<IfArguments>(beginInstruction.arguments))
                 {
-                    IfArguments& arguments = std::get<IfArguments>(instructions[std::get<0>(begin)].arguments);
+                    IfArguments& arguments = std::get<IfArguments>(beginInstruction.arguments);
                     arguments.endLabel = label;
                     if (arguments.elseLocation.has_value())
                         instructions[arguments.elseLocation.value()].arguments = label;
@@ -250,7 +266,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                     case MultiByteFD::i8x16_shuffle: {
                         std::vector<uint8_t> lanes;
                         for (uint32_t i = 0; i < 16; i++)
-                            lanes.push_back(stream.read_little_endian<uint8_t>());   
+                            lanes.push_back(stream.read_little_endian<uint8_t>());
                         instructions.push_back(Instruction { .opcode = realOpcode, .arguments = lanes });
                         break;
                     }
