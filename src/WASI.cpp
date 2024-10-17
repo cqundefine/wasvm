@@ -52,21 +52,21 @@ namespace WASI
         //     size += strlen(*s) + 1;
         // }
 
-        memcpy(VM::memory() + std::get<uint32_t>(args[0]), &count, sizeof(count));
-        memcpy(VM::memory() + std::get<uint32_t>(args[1]), &size, sizeof(size));
+        memcpy(VM::memory() + args[0].get<uint32_t>(), &count, sizeof(count));
+        memcpy(VM::memory() + args[1].get<uint32_t>(), &size, sizeof(size));
 
         return { (uint32_t)0 };
     }
 
     DEFINE_WASI_CALL(clock_time_get)
     {
-        assert(std::get<uint32_t>(args[0]) == 0);
-        assert(std::get<uint64_t>(args[1]) == 1000);
+        assert(args[0].get<uint32_t>() == 0);
+        assert(args[1].get<uint64_t>() == 1000);
 
         struct timespec ts;
         assert(clock_gettime(0, &ts) == 0);
         uint64_t nanos = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-        memcpy(VM::memory() + std::get<uint32_t>(args[2]), &nanos, sizeof(nanos));
+        memcpy(VM::memory() + args[2].get<uint32_t>(), &nanos, sizeof(nanos));
 
         return { (uint32_t)0 };
     }
@@ -90,8 +90,8 @@ namespace WASI
         //     size += strlen(*s) + 1;
         // }
 
-        memcpy(VM::memory() + std::get<uint32_t>(args[0]), &count, sizeof(count));
-        memcpy(VM::memory() + std::get<uint32_t>(args[1]), &size, sizeof(size));
+        memcpy(VM::memory() + args[0].get<uint32_t>(), &count, sizeof(count));
+        memcpy(VM::memory() + args[1].get<uint32_t>(), &size, sizeof(size));
 
         return { (uint32_t)0 };
     }
@@ -99,7 +99,7 @@ namespace WASI
     DEFINE_WASI_CALL(fd_fdstat_get)
     {
         struct stat statBuffer;
-        fstat(std::get<uint32_t>(args[0]), &statBuffer);
+        fstat(args[0].get<uint32_t>(), &statBuffer);
 
         FDStat fdStat {
             .fs_filetype = file_type_from_stat(statBuffer),
@@ -108,30 +108,30 @@ namespace WASI
             .fs_rights_inheriting = { 0 },
         };
 
-        memcpy(VM::memory() + std::get<uint32_t>(args[1]), &fdStat, sizeof(fdStat));
+        memcpy(VM::memory() + args[1].get<uint32_t>(), &fdStat, sizeof(fdStat));
 
         return { (uint32_t)0 };
     }
 
     DEFINE_WASI_CALL(fd_prestat_dir_name)
     {
-        fprintf(stderr, "Warning: fd_prestat_dir_name not implemented: %d\n", std::get<uint32_t>(args[0]));
+        fprintf(stderr, "Warning: fd_prestat_dir_name not implemented: %d\n", args[0].get<uint32_t>());
 
-        if (std::get<uint32_t>(args[0]) != 3)
+        if (args[0].get<uint32_t>() != 3)
             return { (uint32_t)8 };
 
-        assert(std::get<uint32_t>(args[2]) >= 1);
+        assert(args[2].get<uint32_t>() >= 1);
 
-        memcpy(VM::memory() + std::get<uint32_t>(args[1]), "/", 1);
+        memcpy(VM::memory() + args[1].get<uint32_t>(), "/", 1);
 
         return { (uint32_t)0 };
     }
 
     DEFINE_WASI_CALL(fd_prestat_get)
     {
-        fprintf(stderr, "Warning: fd_prestat_get not implemented: %d\n", std::get<uint32_t>(args[0]));
+        fprintf(stderr, "Warning: fd_prestat_get not implemented: %d\n", args[0].get<uint32_t>());
 
-        if (std::get<uint32_t>(args[0]) != 3)
+        if (args[0].get<uint32_t>() != 3)
             return { (uint32_t)8 };
 
         PreStat preStat {
@@ -141,7 +141,7 @@ namespace WASI
             }
         };
 
-        memcpy(VM::memory() + std::get<uint32_t>(args[1]), &preStat, sizeof(preStat));
+        memcpy(VM::memory() + args[1].get<uint32_t>(), &preStat, sizeof(preStat));
 
         return { (uint32_t)0 };
     }
@@ -150,12 +150,12 @@ namespace WASI
     {
         uint32_t written = 0;
 
-        IOVector* iov = (IOVector*)(VM::memory() + std::get<uint32_t>(args[1]));
+        IOVector* iov = (IOVector*)(VM::memory() + args[1].get<uint32_t>());
 
-        for (uint32_t i = 0; i < std::get<uint32_t>(args[2]); i++)
-            written += (uint32_t)write(std::get<uint32_t>(args[0]), (VM::memory() + iov[i].pointer), iov[i].length);
+        for (uint32_t i = 0; i < args[2].get<uint32_t>(); i++)
+            written += (uint32_t)write(args[0].get<uint32_t>(), (VM::memory() + iov[i].pointer), iov[i].length);
 
-        memcpy(VM::memory() + std::get<uint32_t>(args[3]), &written, sizeof(written));
+        memcpy(VM::memory() + args[3].get<uint32_t>(), &written, sizeof(written));
 
         return { written };
     }
@@ -166,20 +166,20 @@ namespace WASI
 
         // fprintf(stderr, "Warning: poll_oneoff not implemented\n");
 
-        memcpy(VM::memory() + std::get<uint32_t>(args[3]), &count, sizeof(count));
+        memcpy(VM::memory() + args[3].get<uint32_t>(), &count, sizeof(count));
 
         return { (uint32_t)0 };
     }
 
     DEFINE_WASI_CALL(proc_exit)
     {
-        exit(std::get<uint32_t>(args[0]));
+        exit(args[0].get<uint32_t>());
         assert(false);
     }
 
     DEFINE_WASI_CALL(random_get)
     {
-        fill_buffer_with_random_data(VM::memory() + std::get<uint32_t>(args[0]), std::get<uint32_t>(args[1]));
+        fill_buffer_with_random_data(VM::memory() + args[0].get<uint32_t>(), args[1].get<uint32_t>());
         return { (uint32_t)0 };
     }
 
@@ -195,7 +195,7 @@ namespace WASI
         // Helper lambda to verify types
         auto verify_type = [](const auto& arg, auto type_tag) {
             using ExpectedType = decltype(type_tag);
-            return std::holds_alternative<ExpectedType>(arg);
+            return arg.template holds_alternative<ExpectedType>();
         };
 
         // Using a tuple to iterate through template arguments

@@ -42,26 +42,26 @@ Value default_value_for_type(Type type)
 
 Type get_value_type(Value value)
 {
-    if (std::holds_alternative<uint32_t>(value))
+    if (value.holds_alternative<uint32_t>())
         return Type::i32;
-    if (std::holds_alternative<uint64_t>(value))
+    if (value.holds_alternative<uint64_t>())
         return Type::i64;
-    if (std::holds_alternative<float>(value))
+    if (value.holds_alternative<float>())
         return Type::f32;
-    if (std::holds_alternative<double>(value))
+    if (value.holds_alternative<double>())
         return Type::f64;
-    if (std::holds_alternative<uint128_t>(value))
+    if (value.holds_alternative<uint128_t>())
         return Type::v128;
-    if (std::holds_alternative<Reference>(value))
+    if (value.holds_alternative<Reference>())
     {
-        if (std::get<Reference>(value).type == ReferenceType::Function)
+        if (value.get<Reference>().type == ReferenceType::Function)
             return Type::funcref;
-        if (std::get<Reference>(value).type == ReferenceType::Extern)
+        if (value.get<Reference>().type == ReferenceType::Extern)
             return Type::externref;
         assert(false);
     }
 
-    if (std::holds_alternative<Label>(value))
+    if (value.holds_alternative<Label>())
     {
         fprintf(stderr, "Error: Tried to get type for a label value\n");
         throw Trap();
@@ -100,6 +100,30 @@ std::string get_type_name(Type type)
             return "funcref";
         case Type::externref:
             return "externref";
+        default:
+            assert(false);
+    }
+
+    std::unreachable();
+}
+
+Value::Type value_type_from_type(Type type)
+{
+    switch (type)
+    {
+        case Type::i32:
+            return Value::Type::UInt32;
+        case Type::i64:
+            return Value::Type::UInt64;
+        case Type::f32:
+            return Value::Type::Float;
+        case Type::f64:
+            return Value::Type::Double;
+        case Type::v128:
+            return Value::Type::UInt128;
+        case Type::funcref:
+        case Type::externref:
+            return Value::Type::Reference;
         default:
             assert(false);
     }

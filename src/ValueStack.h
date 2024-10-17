@@ -33,12 +33,12 @@ public:
     T pop_as()
     {
         Value value = pop();
-        if (!std::holds_alternative<ToValueType<T>>(value))
+        if (!value.holds_alternative<ToValueType<T>>())
         {
             printf("Error: Unxpected type on the stack: %s, expected %s\n", get_type_name(get_value_type(value)).c_str(), value_type_name<ToValueType<T>>);
             throw Trap();
         }
-        return std::bit_cast<T>(std::get<ToValueType<T>>(value));
+        return std::bit_cast<T>(value.get<ToValueType<T>>());
     }
 
     std::vector<Value> pop_n_values(uint32_t n)
@@ -63,11 +63,11 @@ public:
         n++;
         for (auto it = m_stack.rbegin(); it != m_stack.rend(); ++it)
         {
-            if (std::holds_alternative<Label>(*it))
+            if (it->holds_alternative<Label>())
             {
                 if (--n == 0)
                 {
-                    return std::get<Label>(*it);
+                    return it->get<Label>();
                 }
             }
         }

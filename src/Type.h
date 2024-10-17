@@ -22,3 +22,4 @@ Value default_value_for_type(Type type);
 Type get_value_type(Value value);
 ReferenceType get_reference_type_from_reftype(Type type);
 std::string get_type_name(Type type);
+Value::Type value_type_from_type(Type type);

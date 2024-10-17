@@ -22,6 +22,8 @@
     #define LIBC_GLIBC_VERSION(maj, min) 0
 #endif
 
+#define OFFSET_OF(class, member) (reinterpret_cast<ptrdiff_t>(&reinterpret_cast<class*>(0x1000)->member) - 0x1000)
+
 template <typename T>
 using Own = std::unique_ptr<T>;
 template <typename T, typename... Args>

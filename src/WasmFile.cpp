@@ -299,11 +299,14 @@ namespace WasmFile
     {
         uint32_t size = stream.read_leb<uint32_t>();
 
-        size_t beforeLocals = stream.offset();
         std::vector<Local> locals = stream.read_vec<Local>();
+        std::vector<Type> localTypes;
+        for (const auto& local : locals)
+            for (size_t i = 0; i < local.count; i++)
+                localTypes.push_back(local.type);
 
         return Code {
-            .locals = locals,
+            .locals = localTypes,
             .instructions = parse(stream, s_currentWasmFile),
         };
     }

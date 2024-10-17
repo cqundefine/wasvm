@@ -17,6 +17,7 @@ struct Label
     uint32_t continuation;
     uint32_t arity;
 };
+static_assert(sizeof(Label) == 8);
 
 enum class ReferenceType
 {
@@ -35,10 +36,7 @@ struct Reference
     {
     }
 };
-
-typedef std::variant<uint32_t, uint64_t, float, double, uint128_t, Reference, Label> Value;
-
-std::string value_to_string(Value value);
+static_assert(sizeof(Reference) == 8);
 
 template <typename T>
 extern const char* value_type_name;
@@ -98,3 +96,113 @@ concept IsAnyOf = (std::same_as<T, U> || ...);
 
 template <typename T>
 concept IsValueType = IsAnyOf<ToValueType<T>, uint32_t, uint64_t, float, double, uint128_t, Reference, Label>;
+
+class Value
+{
+    friend class ValueStack;
+
+public:
+    // Enum class for types
+    enum class Type : uint64_t
+    {
+        UInt32,
+        UInt64,
+        Float,
+        Double,
+        UInt128,
+        Reference,
+        Label
+    };
+    static_assert(sizeof(Type) == sizeof(uint64_t));
+
+    // Default constructor
+    Value()
+        : m_type(Type::UInt32)
+    {
+        new (&m_data) uint32_t(0); // Initialize with default value
+    }
+
+    // Constructor that uses the IsValueType concept
+    template <IsValueType T>
+    Value(const T& value) : m_type(get_type_for<T>())
+    {
+        new (&m_data) T(value);
+    }
+
+    // Default copy and move constructors/assignments
+    Value(const Value&) = default;
+    Value(Value&&) noexcept = default;
+    Value& operator=(const Value&) = default;
+    Value& operator=(Value&&) noexcept = default;
+
+    // Templated check if the variant holds a specific type
+    template <IsValueType T>
+    bool holds_alternative() const
+    {
+        return m_type == get_type_for<T>();
+    }
+
+    // Access the stored value as a reference (throws if type doesn't match)
+    template <IsValueType T>
+    T& get()
+    {
+        if (!holds_alternative<T>())
+            throw std::bad_variant_access();
+        return *reinterpret_cast<T*>(&m_data);
+    }
+
+    // Access the stored value as a const reference (throws if type doesn't match)
+    template <IsValueType T>
+    const T& get() const
+    {
+        if (!holds_alternative<T>())
+            throw std::bad_variant_access();
+        return *reinterpret_cast<const T*>(&m_data);
+    }
+
+    // Get the current type of the value
+    Type get_type() const
+    {
+        return m_type;
+    }
+
+    static consteval ptrdiff_t data_offset()
+    {
+        return offsetof(Value, m_data);
+    }
+
+    static consteval ptrdiff_t type_offset()
+    {
+        return offsetof(Value, m_type);
+    }
+
+private:
+    union Data {
+        uint32_t uint32Value;
+        uint64_t uint64Value;
+        float floatValue;
+        double doubleValue;
+        uint128_t uint128Value;
+        Reference referenceValue;
+        Label labelValue;
+
+        Data() : uint32Value(0) {}
+    } m_data;
+
+    Type m_type;
+
+    // Helper function to get the Type enum for a specific type
+    template <typename T>
+    static constexpr Type get_type_for() {
+        if constexpr (std::is_same_v<T, uint32_t>) return Type::UInt32;
+        if constexpr (std::is_same_v<T, uint64_t>) return Type::UInt64;
+        if constexpr (std::is_same_v<T, float>) return Type::Float;
+        if constexpr (std::is_same_v<T, double>) return Type::Double;
+        if constexpr (std::is_same_v<T, uint128_t>) return Type::UInt128;
+        if constexpr (std::is_same_v<T, Reference>) return Type::Reference;
+        if constexpr (std::is_same_v<T, Label>) return Type::Label;
+        return Type::UInt32; // Should never reach here
+    }
+};
+
+std::string value_to_string(Value value);

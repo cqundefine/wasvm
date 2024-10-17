@@ -165,7 +165,7 @@ namespace WasmFile
 
     struct Code
     {
-        std::vector<Local> locals;
+        std::vector<Type> locals;
         std::vector<Instruction> instructions;
 
         static Code read_from_stream(Stream& stream);

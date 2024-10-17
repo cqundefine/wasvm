@@ -1,6 +1,7 @@
 #include <MemoryStream.h>
 #include <Opcode.h>
 #include <Operators.h>
+#include <Compiler.h>
 #include <Type.h>
 #include <Util.h>
 #include <VM.h>
@@ -53,8 +54,8 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
         if (data.mode == WasmFile::ElementMode::Active)
         {
             Value beginValue = run_bare_code_returning(new_module, data.expr, Type::i32);
-            assert(std::holds_alternative<uint32_t>(beginValue));
-            uint32_t begin = std::get<uint32_t>(beginValue);
+            assert(beginValue.holds_alternative<uint32_t>());
+            uint32_t begin = beginValue.get<uint32_t>();
 
             auto memory = new_module->get_memory(data.memoryIndex);
 
@@ -85,8 +86,8 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
         if (element.mode == WasmFile::ElementMode::Active)
         {
             Value beginValue = run_bare_code_returning(new_module, element.expr, Type::i32);
-            assert(std::holds_alternative<uint32_t>(beginValue));
-            uint32_t begin = std::get<uint32_t>(beginValue);
+            assert(beginValue.holds_alternative<uint32_t>());
+            uint32_t begin = beginValue.get<uint32_t>();
 
             if (begin + (element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size()) > new_module->get_table(element.table)->elements.size())
                 throw Trap();
@@ -96,8 +97,8 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
                 if (element.functionIndexes.empty())
                 {
                     Value reference = run_bare_code_returning(new_module, element.referencesExpr[i], Type::funcref);
-                    assert(std::holds_alternative<Reference>(reference));
-                    new_module->get_table(element.table)->elements[begin + i] = std::get<Reference>(reference);
+                    assert(reference.holds_alternative<Reference>());
+                    new_module->get_table(element.table)->elements[begin + i] = reference.get<Reference>();
                 }
                 else
                     new_module->get_table(element.table)->elements[begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i] };
@@ -173,17 +174,24 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
     m_frame = new Frame(mod);
 
     for (uint32_t i = 0; i < args.size(); i++)
-    {
         m_frame->locals.push_back(args.at(i));
-    }
 
     for (const auto& local : function->code.locals)
-    {
-        for (uint32_t i = 0; i < local.count; i++)
-        {
-            m_frame->locals.push_back(default_value_for_type(local.type));
-        }
-    }
+        m_frame->locals.push_back(default_value_for_type(local));
+
+    // try
+    // {
+    //     auto jitted_code = Compiler::compile(function, mod->wasmFile);
+    //     Value returnValue;
+    //     jitted_code(m_frame->locals.data(), &returnValue);
+    //     clean_up_frame();
+    //     return { returnValue };
+    // }
+    // catch (JITCompilationException error)
+    // {
+    //     fprintf(stderr, "Failed to compile JIT\n");
+    //     throw Trap();
+    // }
 
     m_frame->stack.push(Label {
         .continuation = static_cast<uint32_t>(function->code.instructions.size()),
@@ -235,7 +243,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 [[fallthrough]];
             case Opcode::end: {
                 std::vector<Value> values;
-                while (!std::holds_alternative<Label>(m_frame->stack.peek()))
+                while (!m_frame->stack.peek().holds_alternative<Label>())
                 {
                     values.push_back(m_frame->stack.pop());
                 }
@@ -297,7 +305,8 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 if (reference.index == UINT32_MAX)
                     throw Trap();
 
-                assert(reference.type == ReferenceType::Function);
+                if (reference.type != ReferenceType::Function)
+                    throw Trap();
 
                 auto function = mod->functions[reference.index];
 
@@ -1346,13 +1355,13 @@ void VM::branch_to_label(uint32_t index)
     for (uint32_t drop_count = index + 1; drop_count > 0;)
     {
         value = m_frame->stack.pop();
-        if (std::holds_alternative<Label>(value))
+        if (value.holds_alternative<Label>())
             drop_count--;
     }
 
     m_frame->stack.push_values(values);
 
-    m_frame->ip = std::get<Label>(value).continuation;
+    m_frame->ip = value.get<Label>().continuation;
 }
 
 void VM::call_function(Ref<Function> function)

@@ -89,26 +89,26 @@ std::optional<Value> parse_value(nlohmann::json json)
 
 bool compare_values(Value a, Value b)
 {
-    if (a.index() != b.index())
+    if (a.get_type() != b.get_type())
         return false;
 
-    if (std::holds_alternative<uint32_t>(a))
-        return std::get<uint32_t>(a) == std::get<uint32_t>(b);
-    if (std::holds_alternative<uint64_t>(a))
-        return std::get<uint64_t>(a) == std::get<uint64_t>(b);
+    if (a.holds_alternative<uint32_t>())
+        return a.get<uint32_t>() == b.get<uint32_t>();
+    if (a.holds_alternative<uint64_t>())
+        return a.get<uint64_t>() == b.get<uint64_t>();
 
-    if (std::holds_alternative<float>(a))
-        return float_equals(std::get<float>(a), std::get<float>(b));
-    if (std::holds_alternative<double>(a))
-        return double_equals(std::get<double>(a), std::get<double>(b));
+    if (a.holds_alternative<float>())
+        return float_equals(a.get<float>(), b.get<float>());
+    if (a.holds_alternative<double>())
+        return double_equals(a.get<double>(), b.get<double>());
 
-    if (std::holds_alternative<uint128_t>(a))
-        return std::get<uint128_t>(a) == std::get<uint128_t>(b);
+    if (a.holds_alternative<uint128_t>())
+        return a.get<uint128_t>() == b.get<uint128_t>();
 
-    if (std::holds_alternative<Reference>(a))
+    if (a.holds_alternative<Reference>())
     {
-        auto refA = std::get<Reference>(a);
-        auto refB = std::get<Reference>(b);
+        auto refA = a.get<Reference>();
+        auto refB = b.get<Reference>();
 
         if (refA.type != refB.type)
             return false;
