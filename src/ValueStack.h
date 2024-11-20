@@ -58,27 +58,32 @@ public:
         return m_stack.back();
     }
 
-    Label nth_label(uint32_t n)
-    {
-        n++;
-        for (auto it = m_stack.rbegin(); it != m_stack.rend(); ++it)
-        {
-            if (it->holds_alternative<Label>())
-            {
-                if (--n == 0)
-                {
-                    return it->get<Label>();
-                }
-            }
-        }
+    // Label nth_label(uint32_t n)
+    // {
+    //     n++;
+    //     for (auto it = m_stack.rbegin(); it != m_stack.rend(); ++it)
+    //     {
+    //         if (it->holds_alternative<Label>())
+    //         {
+    //             if (--n == 0)
+    //             {
+    //                 return it->get<Label>();
+    //             }
+    //         }
+    //     }
 
-        fprintf(stderr, "Error: Not enough labels on the stack\n");
-        throw Trap();
+    //     fprintf(stderr, "Error: Not enough labels on the stack\n");
+    //     throw Trap();
+    // }
+
+    void erase(uint32_t fromBegin, uint32_t fromEnd)
+    {
+        m_stack.erase(m_stack.begin() + fromBegin, m_stack.end() - fromEnd);
     }
 
-    size_t size() const
+    uint32_t size() const
     {
-        return m_stack.size();
+        return static_cast<uint32_t>(m_stack.size());
     }
 
     void clear()

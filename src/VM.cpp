@@ -193,9 +193,10 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
     //     throw Trap();
     // }
 
-    m_frame->stack.push(Label {
+    m_frame->label_stack.push_back(Label {
         .continuation = static_cast<uint32_t>(function->code.instructions.size()),
-        .arity = static_cast<uint32_t>(function->type.returns.size()) });
+        .arity = static_cast<uint32_t>(function->type.returns.size()),
+        .stackHeight = 0 });
 
     while (m_frame->ip < function->code.instructions.size())
     {
@@ -210,52 +211,40 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::block:
             case Opcode::loop: {
                 const BlockLoopArguments& arguments = std::get<BlockLoopArguments>(instruction.arguments);
-                std::vector<Value> params = m_frame->stack.pop_n_values(arguments.blockType.get_param_types(mod->wasmFile).size());
-                m_frame->stack.push(arguments.label);
-                m_frame->stack.push_values(params);
+                Label label = arguments.label;
+                label.stackHeight = static_cast<uint32_t>(m_frame->stack.size() - arguments.blockType.get_param_types(mod->wasmFile).size());
+                m_frame->label_stack.push_back(label);
                 break;
             }
             case Opcode::if_: {
                 const IfArguments& arguments = std::get<IfArguments>(instruction.arguments);
 
                 uint32_t value = m_frame->stack.pop_as<uint32_t>();
-                std::vector<Value> params = m_frame->stack.pop_n_values(arguments.blockType.get_param_types(mod->wasmFile).size());
+
+                Label label = arguments.endLabel;
+                label.stackHeight = static_cast<uint32_t>(m_frame->stack.size() - arguments.blockType.get_param_types(mod->wasmFile).size());
 
                 if (arguments.elseLocation.has_value())
                 {
                     if (value == 0)
                         m_frame->ip = arguments.elseLocation.value() + 1;
-                    m_frame->stack.push(arguments.endLabel);
+                    m_frame->label_stack.push_back(label);
                 }
                 else
                 {
                     if (value != 0)
-                        m_frame->stack.push(arguments.endLabel);
+                        m_frame->label_stack.push_back(label);
                     else
-                        m_frame->ip = arguments.endLabel.continuation;
+                        m_frame->ip = label.continuation;
                 }
-
-                m_frame->stack.push_values(params);
                 break;
             }
             case Opcode::else_:
                 m_frame->ip = std::get<Label>(instruction.arguments).continuation;
                 [[fallthrough]];
-            case Opcode::end: {
-                std::vector<Value> values;
-                while (!m_frame->stack.peek().holds_alternative<Label>())
-                {
-                    values.push_back(m_frame->stack.pop());
-                }
-                m_frame->stack.pop_as<Label>();
-
-                while (!values.empty())
-                {
-                    m_frame->stack.push(values.back());
-                    values.pop_back();
-                }
+            case Opcode::end:
+                m_frame->label_stack.pop_back();
                 break;
-            }
             case Opcode::br:
                 branch_to_label(std::get<uint32_t>(instruction.arguments));
                 break;
@@ -1222,7 +1211,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
     if (m_frame->stack.size() != 0)
     {
-        printf("Error: Stack not empty when running function, size is %zu\n", m_frame->stack.size());
+        printf("Error: Stack not empty when running function, size is %u\n", m_frame->stack.size());
         throw Trap();
     }
 
@@ -1346,22 +1335,15 @@ void VM::run_store_instruction(const WasmFile::MemArg& memArg)
 
 void VM::branch_to_label(uint32_t index)
 {
-    Label label = m_frame->stack.nth_label(index);
-
-    // FIXME: Actually verify the values
-    std::vector<Value> values = m_frame->stack.pop_n_values(label.arity);
-
-    Value value;
-    for (uint32_t drop_count = index + 1; drop_count > 0;)
+    Label label;
+    for (uint32_t i = 0; i < index + 1; i++)
     {
-        value = m_frame->stack.pop();
-        if (value.holds_alternative<Label>())
-            drop_count--;
+        label = m_frame->label_stack.back();
+        m_frame->label_stack.pop_back();
     }
 
-    m_frame->stack.push_values(values);
-
-    m_frame->ip = value.get<Label>().continuation;
+    m_frame->stack.erase(label.stackHeight, label.arity);
+    m_frame->ip = label.continuation;
 }
 
 void VM::call_function(Ref<Function> function)

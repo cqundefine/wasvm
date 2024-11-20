@@ -61,12 +61,6 @@ Type get_value_type(Value value)
         assert(false);
     }
 
-    if (value.holds_alternative<Label>())
-    {
-        fprintf(stderr, "Error: Tried to get type for a label value\n");
-        throw Trap();
-    }
-
     fprintf(stderr, "Error: Unexpected value type\n");
     throw Trap();
 }

@@ -24,9 +24,6 @@ const char* value_type_name<uint128_t> = "v128";
 template <>
 const char* value_type_name<Reference> = "funcref/externref";
 
-template <>
-const char* value_type_name<Label> = "label";
-
 std::string value_to_string(Value value)
 {
     if (value.holds_alternative<uint32_t>())

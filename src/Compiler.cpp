@@ -6,44 +6,44 @@
 
 void block(uint64_t* stack, uint64_t paramCount, Label label)
 {
-    Value* values = new Value[paramCount];
+    // Value* values = new Value[paramCount];
 
-    for (uint64_t i = 0; i < paramCount; i++)
-    {
-        Value::Type type = static_cast<Value::Type>(*stack);
-        stack++;
-        if (type == Value::Type::UInt32)
-            values[i] = Value((uint32_t)*stack);
-        else if (type == Value::Type::UInt64)
-            values[i] = Value(*stack);
-        else
-        {
-            fprintf(stderr, "Unsupported type in block params during JIT execution\n");
-            assert(false);
-        }
+    // for (uint64_t i = 0; i < paramCount; i++)
+    // {
+    //     Value::Type type = static_cast<Value::Type>(*stack);
+    //     stack++;
+    //     if (type == Value::Type::UInt32)
+    //         values[i] = Value((uint32_t)*stack);
+    //     else if (type == Value::Type::UInt64)
+    //         values[i] = Value(*stack);
+    //     else
+    //     {
+    //         fprintf(stderr, "Unsupported type in block params during JIT execution\n");
+    //         assert(false);
+    //     }
 
-        stack++;
-    }
+    //     stack++;
+    // }
 
-    stack--;
-    *stack = std::bit_cast<uint64_t>(label);
+    // stack--;
+    // *stack = std::bit_cast<uint64_t>(label);
 
-    if (paramCount > 0)
-        for (uint64_t i = paramCount - 1; i >= 0; i--)
-        {
-            stack--;
-            *stack = static_cast<uint64_t>(values[i].get_type());
-            stack--;
-            if (values[i].get_type() == Value::Type::UInt32)
-                *stack = (uint64_t)values[i].get<uint32_t>();
-            else if (values[i].get_type() == Value::Type::UInt64)
-                *stack = values[i].get<uint64_t>();
-            else
-            {
-                fprintf(stderr, "Unsupported type in block params during JIT execution\n");
-                assert(false);
-            }
-        }
+    // if (paramCount > 0)
+    //     for (uint64_t i = paramCount - 1; i >= 0; i--)
+    //     {
+    //         stack--;
+    //         *stack = static_cast<uint64_t>(values[i].get_type());
+    //         stack--;
+    //         if (values[i].get_type() == Value::Type::UInt32)
+    //             *stack = (uint64_t)values[i].get<uint32_t>();
+    //         else if (values[i].get_type() == Value::Type::UInt64)
+    //             *stack = values[i].get<uint64_t>();
+    //         else
+    //         {
+    //             fprintf(stderr, "Unsupported type in block params during JIT execution\n");
+    //             assert(false);
+    //         }
+    //     }
 }
 
 JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFile)
@@ -74,7 +74,7 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
                 const BlockLoopArguments& arguments = std::get<BlockLoopArguments>(instruction.arguments);
                 m_jit.mov64(JIT::Operand::Register(ARG0), JIT::Operand::Register(JIT::Reg::RSP));
                 m_jit.mov64(JIT::Operand::Register(ARG1), JIT::Operand::Immediate(arguments.blockType.get_param_types(wasmFile).size()));
-                m_jit.mov64(JIT::Operand::Register(ARG2), JIT::Operand::Immediate(std::bit_cast<uint64_t>(arguments.label)));
+                // m_jit.mov64(JIT::Operand::Register(ARG2), JIT::Operand::Immediate(std::bit_cast<uint64_t>(arguments.label)));
                 m_jit.native_call((void*)block);
                 break;
             }

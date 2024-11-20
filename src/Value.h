@@ -16,8 +16,8 @@ struct Label
 {
     uint32_t continuation;
     uint32_t arity;
+    uint32_t stackHeight;
 };
-static_assert(sizeof(Label) == 8);
 
 enum class ReferenceType
 {
@@ -59,9 +59,6 @@ extern const char* value_type_name<uint128_t>;
 template <>
 extern const char* value_type_name<Reference>;
 
-template <>
-extern const char* value_type_name<Label>;
-
 template <typename T, typename = void>
 struct ToValueTypeHelper
 {
@@ -95,7 +92,7 @@ template <typename T, typename... U>
 concept IsAnyOf = (std::same_as<T, U> || ...);
 
 template <typename T>
-concept IsValueType = IsAnyOf<ToValueType<T>, uint32_t, uint64_t, float, double, uint128_t, Reference, Label>;
+concept IsValueType = IsAnyOf<ToValueType<T>, uint32_t, uint64_t, float, double, uint128_t, Reference>;
 
 class Value
 {
@@ -110,8 +107,7 @@ public:
         Float,
         Double,
         UInt128,
-        Reference,
-        Label
+        Reference
     };
     static_assert(sizeof(Type) == sizeof(uint64_t));
 
@@ -184,7 +180,6 @@ private:
         double doubleValue;
         uint128_t uint128Value;
         Reference referenceValue;
-        Label labelValue;
 
         Data() : uint32Value(0) {}
     } m_data;
@@ -200,7 +195,6 @@ private:
         if constexpr (std::is_same_v<T, double>) return Type::Double;
         if constexpr (std::is_same_v<T, uint128_t>) return Type::UInt128;
         if constexpr (std::is_same_v<T, Reference>) return Type::Reference;
-        if constexpr (std::is_same_v<T, Label>) return Type::Label;
         return Type::UInt32; // Should never reach here
     }
 };

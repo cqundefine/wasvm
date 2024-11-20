@@ -19,6 +19,7 @@ public:
     {
         std::vector<Value> locals;
         ValueStack stack;
+        std::vector<Label> label_stack;
         uint32_t ip = 0;
         Ref<Module> mod;
 
