@@ -16,8 +16,10 @@ struct Label
 {
     uint32_t continuation;
     uint32_t arity;
-    uint32_t stackHeight;
+    size_t stackHeight;
 };
+// This is required as we store RSP in stackHeight while running JIT
+static_assert(sizeof(size_t) == sizeof(void*));
 
 enum class ReferenceType
 {

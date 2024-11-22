@@ -76,10 +76,14 @@ public:
     void add64(Operand dst, Operand src);
     void add32(Operand dst, Operand src);
 
+    void sub64(Operand dst, Operand src);
+
     void exit();
 
     void push64(Operand arg);
     void pop64(Operand arg);
+
+    void nop();
 
     void native_call(void* callee);
 
@@ -108,7 +112,7 @@ private:
     };
 
     void rex(Operand arg, bool W);
-    void rex_rm(Operand dst, Operand src, bool W);
+    void rex_rm(Operand rm, Operand reg, bool W);
 
     union ModRM
     {
@@ -127,6 +131,7 @@ private:
     static_assert(sizeof(ModRM) == 1);
 
     void mod_rm_register(Operand rm, Operand reg);
+    void mod_rm(Operand rm, uint8_t reg);
 
     std::vector<uint8_t> code;
 };

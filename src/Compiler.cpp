@@ -3,47 +3,16 @@
 #include <JIT.h>
 #include <Opcode.h>
 #include <Parser.h>
+#include <VM.h>
 
-void block(uint64_t* stack, uint64_t paramCount, Label label)
+void block(Label label)
 {
-    // Value* values = new Value[paramCount];
+    VM::frame()->label_stack.push_back(label);
+}
 
-    // for (uint64_t i = 0; i < paramCount; i++)
-    // {
-    //     Value::Type type = static_cast<Value::Type>(*stack);
-    //     stack++;
-    //     if (type == Value::Type::UInt32)
-    //         values[i] = Value((uint32_t)*stack);
-    //     else if (type == Value::Type::UInt64)
-    //         values[i] = Value(*stack);
-    //     else
-    //     {
-    //         fprintf(stderr, "Unsupported type in block params during JIT execution\n");
-    //         assert(false);
-    //     }
-
-    //     stack++;
-    // }
-
-    // stack--;
-    // *stack = std::bit_cast<uint64_t>(label);
-
-    // if (paramCount > 0)
-    //     for (uint64_t i = paramCount - 1; i >= 0; i--)
-    //     {
-    //         stack--;
-    //         *stack = static_cast<uint64_t>(values[i].get_type());
-    //         stack--;
-    //         if (values[i].get_type() == Value::Type::UInt32)
-    //             *stack = (uint64_t)values[i].get<uint32_t>();
-    //         else if (values[i].get_type() == Value::Type::UInt64)
-    //             *stack = values[i].get<uint64_t>();
-    //         else
-    //         {
-    //             fprintf(stderr, "Unsupported type in block params during JIT execution\n");
-    //             assert(false);
-    //         }
-    //     }
+void end()
+{
+    VM::frame()->label_stack.pop_back();
 }
 
 JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFile)
@@ -70,37 +39,30 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
     {
         switch (instruction.opcode)
         {
-            case Opcode::block: {
+            case Opcode::nop:
+                m_jit.nop();
+                break;
+            case Opcode::block:
+            case Opcode::loop: {
                 const BlockLoopArguments& arguments = std::get<BlockLoopArguments>(instruction.arguments);
-                m_jit.mov64(JIT::Operand::Register(ARG0), JIT::Operand::Register(JIT::Reg::RSP));
-                m_jit.mov64(JIT::Operand::Register(ARG1), JIT::Operand::Immediate(arguments.blockType.get_param_types(wasmFile).size()));
-                // m_jit.mov64(JIT::Operand::Register(ARG2), JIT::Operand::Immediate(std::bit_cast<uint64_t>(arguments.label)));
+                m_jit.mov64(JIT::Operand::Register(ARG0), JIT::Operand::Immediate(*(uint64_t*)&arguments.label));
+
+                // label.stackHeight = rsp - paramCount
+                m_jit.mov64(JIT::Operand::Register(ARG1), JIT::Operand::Register(JIT::Reg::RSP));
+                m_jit.sub64(JIT::Operand::Register(ARG1), JIT::Operand::Immediate(arguments.blockType.get_param_types(function->mod->wasmFile).size() * 2 * sizeof(uint64_t)));
+                
                 m_jit.native_call((void*)block);
                 break;
             }
             case Opcode::end:
-                // FIXME: This is very hacky and not correct at all
-                if (function->type.returns.size() == 1)
-                {
-                    pop_value(JIT::Operand::Register(GPR0));
-
-                    if (function->type.returns[0] == Type::i32)
-                        m_jit.mov32(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::data_offset()), JIT::Operand::Register(GPR0));
-                    else if (function->type.returns[0] == Type::i64)
-                        m_jit.mov64(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::data_offset()), JIT::Operand::Register(GPR0));
-                    else
-                    {
-                        fprintf(stderr, "Unsupported value type in JIT\n");
-                        throw JITCompilationException();
-                    }
-
-                    m_jit.mov64(JIT::Operand::Register(FUNCTION_TEMPORARY), JIT::Operand::Immediate(static_cast<uint64_t>(value_type_from_type(function->type.returns[0]))));
-                    m_jit.mov64(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::type_offset()), JIT::Operand::Register(FUNCTION_TEMPORARY));
-                }
-                m_jit.exit();
+                m_jit.native_call((void*)end);
                 break;
             case Opcode::local_get:
                 get_local(std::get<uint32_t>(instruction.arguments));
+                break;
+            case Opcode::i32_const:
+                m_jit.mov32(JIT::Operand::Register(GPR0), JIT::Operand::Immediate(std::get<uint32_t>(instruction.arguments)));
+                push_value(Value::Type::UInt32, JIT::Operand::Register(GPR0));
                 break;
             case Opcode::i64_const:
                 m_jit.mov64(JIT::Operand::Register(GPR0), JIT::Operand::Immediate(std::get<uint64_t>(instruction.arguments)));
@@ -123,6 +85,26 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
                 throw JITCompilationException();
         }
     }
+
+    // FIXME: This is very hacky
+    if (function->type.returns.size() == 1)
+    {
+        pop_value(JIT::Operand::Register(GPR0));
+
+        if (function->type.returns[0] == Type::i32)
+            m_jit.mov32(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::data_offset()), JIT::Operand::Register(GPR0));
+        else if (function->type.returns[0] == Type::i64)
+            m_jit.mov64(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::data_offset()), JIT::Operand::Register(GPR0));
+        else
+        {
+            fprintf(stderr, "Unsupported value type in JIT\n");
+            throw JITCompilationException();
+        }
+
+        m_jit.mov64(JIT::Operand::Register(FUNCTION_TEMPORARY), JIT::Operand::Immediate(static_cast<uint64_t>(value_type_from_type(function->type.returns[0]))));
+        m_jit.mov64(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::type_offset()), JIT::Operand::Register(FUNCTION_TEMPORARY));
+    }
+    m_jit.exit();
 
     return (JITCode)m_jit.build();
 }

@@ -6,15 +6,7 @@
 #include <Util.h>
 #include <VM.h>
 #include <WASI.h>
-#include <cassert>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
-#include <ctime>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <utility>
 
 void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 {
@@ -181,16 +173,19 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
     // try
     // {
-    //     auto jitted_code = Compiler::compile(function, mod->wasmFile);
+    //     auto jittedCode = Compiler::compile(function, mod->wasmFile);
     //     Value returnValue;
-    //     jitted_code(m_frame->locals.data(), &returnValue);
+    //     jittedCode(m_frame->locals.data(), &returnValue);
     //     clean_up_frame();
-    //     return { returnValue };
+    //     if (function->type.returns.size() == 0)
+    //         return {};
+    //     else
+    //         return { returnValue };
     // }
     // catch (JITCompilationException error)
     // {
     //     fprintf(stderr, "Failed to compile JIT\n");
-    //     throw Trap();
+    //     throw JITCompilationException();
     // }
 
     m_frame->label_stack.push_back(Label {

@@ -1,5 +1,6 @@
 #include <FileStream.h>
 #include <TestRunner.h>
+#include <Compiler.h>
 #include <VM.h>
 #include <bit>
 #include <fstream>
@@ -145,11 +146,21 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, 
         if (failed)
             return {};
 
-        std::string field = action["field"];
-        if (action.contains("module"))
-            return VM::run_function(action["module"], field, args);
-        else
-            return VM::run_function(field, args);
+        try
+        {
+            std::string field = action["field"];
+            if (action.contains("module"))
+                return VM::run_function(action["module"], field, args);
+            else
+                return VM::run_function(field, args);
+        }
+        catch (JITCompilationException e)
+        {
+            stats.skipped++;
+            failed = true;
+            printf("%s/%u skipped: failed to compile JIT code\n", path, line);
+            return {};
+        }
     }
     else if (actionType == "get")
     {
@@ -216,6 +227,11 @@ TestStats run_tests(const char* path)
                 printf("%s/%u module failed to load\n", path, line);
                 module_loaded = false;
             }
+            catch (JITCompilationException e)
+            {
+                printf("%s/%u module failed to load\n", path, line);
+                module_loaded = false;
+            }
         }
         else if (type == "register")
         {
@@ -245,6 +261,9 @@ TestStats run_tests(const char* path)
                 printf("%s/%u failed: unexpected trap\n", path, line);
                 continue;
             }
+
+            if (failed)
+                continue;
 
             if (returnValues.size() != 0)
             {

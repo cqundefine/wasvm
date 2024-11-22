@@ -43,6 +43,8 @@ public:
     static Ref<Module> current_module() { return m_current_module; }
     static uint8_t* memory() { return m_current_module->get_memory(0)->data; } // FIXME: Remove this after rewriting WASI
 
+    static Frame* frame() { return m_frame; }
+
 private:
     static Value run_bare_code_returning(Ref<Module> mod, std::vector<Instruction> instructions, Type returnType);
 
