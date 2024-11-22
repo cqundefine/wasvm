@@ -122,7 +122,8 @@ public:
 
     // Constructor that uses the IsValueType concept
     template <IsValueType T>
-    Value(const T& value) : m_type(get_type_for<ToValueType<T>>())
+    Value(const T& value)
+        : m_type(get_type_for<ToValueType<T>>())
     {
         new (&m_data) ToValueType<T>((ToValueType<T>)value);
     }
@@ -175,7 +176,8 @@ public:
     }
 
 private:
-    union Data {
+    union Data
+    {
         uint32_t uint32Value;
         uint64_t uint64Value;
         float floatValue;
@@ -183,20 +185,30 @@ private:
         uint128_t uint128Value;
         Reference referenceValue;
 
-        Data() : uint32Value(0) {}
+        Data()
+            : uint32Value(0)
+        {
+        }
     } m_data;
 
     Type m_type;
 
     // Helper function to get the Type enum for a specific type
     template <typename T>
-    static constexpr Type get_type_for() {
-        if constexpr (std::is_same_v<T, uint32_t>) return Type::UInt32;
-        if constexpr (std::is_same_v<T, uint64_t>) return Type::UInt64;
-        if constexpr (std::is_same_v<T, float>) return Type::Float;
-        if constexpr (std::is_same_v<T, double>) return Type::Double;
-        if constexpr (std::is_same_v<T, uint128_t>) return Type::UInt128;
-        if constexpr (std::is_same_v<T, Reference>) return Type::Reference;
+    static constexpr Type get_type_for()
+    {
+        if constexpr (std::is_same_v<T, uint32_t>)
+            return Type::UInt32;
+        if constexpr (std::is_same_v<T, uint64_t>)
+            return Type::UInt64;
+        if constexpr (std::is_same_v<T, float>)
+            return Type::Float;
+        if constexpr (std::is_same_v<T, double>)
+            return Type::Double;
+        if constexpr (std::is_same_v<T, uint128_t>)
+            return Type::UInt128;
+        if constexpr (std::is_same_v<T, Reference>)
+            return Type::Reference;
         return Type::UInt32; // Should never reach here
     }
 };

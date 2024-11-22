@@ -33,7 +33,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             }
             case Opcode::loop: {
                 WasmFile::BlockType blockType = stream.read_typed<WasmFile::BlockType>();
-                blockBeginStack.push(BlockBeginInfo { 
+                blockBeginStack.push(BlockBeginInfo {
                     .begin = 0,
                     .arity = 0,
                     .isFake = true });

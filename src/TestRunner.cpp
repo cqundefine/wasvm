@@ -1,6 +1,6 @@
+#include <Compiler.h>
 #include <FileStream.h>
 #include <TestRunner.h>
-#include <Compiler.h>
 #include <VM.h>
 #include <bit>
 #include <fstream>

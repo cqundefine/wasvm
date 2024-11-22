@@ -1,9 +1,9 @@
-#include <stdio.h>
 #include <Compiler.h>
 #include <JIT.h>
 #include <Opcode.h>
 #include <Parser.h>
 #include <VM.h>
+#include <stdio.h>
 
 void block(Label label)
 {
@@ -50,7 +50,7 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
                 // label.stackHeight = rsp - paramCount
                 m_jit.mov64(JIT::Operand::Register(ARG1), JIT::Operand::Register(JIT::Reg::RSP));
                 m_jit.sub64(JIT::Operand::Register(ARG1), JIT::Operand::Immediate(arguments.blockType.get_param_types(function->mod->wasmFile).size() * 2 * sizeof(uint64_t)));
-                
+
                 m_jit.native_call((void*)block);
                 break;
             }

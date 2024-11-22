@@ -1,7 +1,7 @@
+#include <Compiler.h>
 #include <MemoryStream.h>
 #include <Opcode.h>
 #include <Operators.h>
-#include <Compiler.h>
 #include <Type.h>
 #include <Util.h>
 #include <VM.h>
@@ -1533,7 +1533,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             auto returnValue = m_frame->stack.pop();
             if (get_value_type(returnValue) != function->type.returns[i])
             {
-                printf("Error: Unxpected return value on the stack: %s, expected %s\n", get_type_name(get_value_type(returnValue)).c_str(), get_type_name(function->type.returns[i]).c_str());  
+                printf("Error: Unxpected return value on the stack: %s, expected %s\n", get_type_name(get_value_type(returnValue)).c_str(), get_type_name(function->type.returns[i]).c_str());
                 throw Trap();
             }
             returnValues.push_back(returnValue);

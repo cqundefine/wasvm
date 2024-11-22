@@ -100,8 +100,10 @@ private:
         return static_cast<uint8_t>(reg) & 0b111;
     }
 
-    union REX {
-        struct {
+    union REX
+    {
+        struct
+        {
             uint8_t B : 1; // ModRM::RM
             uint8_t X : 1; // SIB::Index
             uint8_t R : 1; // ModRM::Reg
