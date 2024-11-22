@@ -42,10 +42,11 @@ std::optional<Value> parse_value(nlohmann::json json)
             else
                 return {};
 
-            for (const auto& lane : json["value"])
+            for (size_t i = 0; i < json["value"].size(); i++)
             {
-                value <<= shiftCount;
-                value |= static_cast<uint64_t>(std::stoull(lane.get<std::string>()));
+                auto lane = json["value"][i];
+                uint128_t laneInt = static_cast<uint128_t>(std::stoull(lane.get<std::string>()));
+                value |= laneInt << (shiftCount * i);
             }
             return value;
         }

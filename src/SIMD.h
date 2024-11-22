@@ -39,10 +39,18 @@ template <typename T>
 concept IsVector = requires(T a) {
     { sizeof(T) == 16 };
     { a[0] };
+    { a + 1 };
 };
 
 template <typename T>
 using VectorElement = decltype(std::declval<T>()[0]);
+
+template <typename T>
+T vector_broadcast(VectorElement<T> value)
+{
+    T result = {};
+    return result + value;
+}
 
 #define GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(name, function)        \
     template <typename T>                                                 \
@@ -55,8 +63,17 @@ using VectorElement = decltype(std::declval<T>()[0]);
         return result;                                                    \
     }
 
-GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(min, std::min);
-GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(max, std::max);
+template <IsVector T>
+T vector_min(T a, T b)
+{
+    return (a < b) ? a : b;
+}
+
+template <IsVector T>
+T vector_max(T a, T b)
+{
+    return (a > b) ? a : b;
+}
 
 #define GENERIC_VECTOR_UNARY_INSTRUCTION_FUNCTION(name, function)         \
     template <typename T>                                                 \

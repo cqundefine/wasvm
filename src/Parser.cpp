@@ -264,9 +264,9 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                         instructions.push_back(Instruction { .opcode = realOpcode, .arguments = LoadStoreLaneArguments { .memArg = stream.read_typed<WasmFile::MemArg>(), .lane = stream.read_little_endian<uint8_t>() } });
                         break;
                     case MultiByteFD::i8x16_shuffle: {
-                        std::vector<uint8_t> lanes;
+                        uint8x16_t lanes;
                         for (uint32_t i = 0; i < 16; i++)
-                            lanes.push_back(stream.read_little_endian<uint8_t>());
+                            lanes[i] = stream.read_little_endian<uint8_t>();
                         instructions.push_back(Instruction { .opcode = realOpcode, .arguments = lanes });
                         break;
                     }

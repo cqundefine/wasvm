@@ -22,7 +22,7 @@ ENABLED_PROPOSALS = [
     # "threads",
 ]
 
-ENABLE_SIMD = False
+ENABLE_SIMD = True
 
 shutil.rmtree(OUTPUT_PATH)
 

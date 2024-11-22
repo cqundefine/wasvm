@@ -1039,6 +1039,109 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::v128_const:
                 m_frame->stack.push(std::get<uint128_t>(instruction.arguments));
                 break;
+            case Opcode::i8x16_shuffle: {
+                const uint8x16_t& arg = std::get<uint8x16_t>(instruction.arguments);
+                auto b = m_frame->stack.pop_as<uint8x16_t>();
+                auto a = m_frame->stack.pop_as<uint8x16_t>();
+                // TODO: Use __builtin_shuffle on GCC
+                uint8x16_t result;
+                for (size_t i = 0; i < 16; i++)
+                {
+                    if (arg[i] < 16)
+                        result[i] = a[arg[i]];
+                    else
+                        result[i] = b[arg[i] - 16];
+                }
+                m_frame->stack.push(result);
+                break;
+            }
+            case Opcode::i8x16_swizzle:
+                run_binary_operation<uint8x16_t, uint8x16_t, operation_vector_swizzle>();
+                break;
+            case Opcode::i8x16_splat:
+                m_frame->stack.push(vector_broadcast<uint8x16_t>(m_frame->stack.pop_as<uint32_t>()));
+                break;
+            case Opcode::i16x8_splat:
+                m_frame->stack.push(vector_broadcast<uint16x8_t>(m_frame->stack.pop_as<uint32_t>()));
+                break;
+            case Opcode::i32x4_splat:
+                m_frame->stack.push(vector_broadcast<uint32x4_t>(m_frame->stack.pop_as<uint32_t>()));
+                break;
+            case Opcode::i64x2_splat:
+                m_frame->stack.push(vector_broadcast<uint64x2_t>(m_frame->stack.pop_as<uint64_t>()));
+                break;
+            case Opcode::f32x4_splat:
+                m_frame->stack.push(vector_broadcast<float32x4_t>(m_frame->stack.pop_as<float>()));
+                break;
+            case Opcode::f64x2_splat:
+                m_frame->stack.push(vector_broadcast<float64x2_t>(m_frame->stack.pop_as<double>()));
+                break;
+            case Opcode::i8x16_extract_lane_s:
+                m_frame->stack.push((uint32_t)(int32_t)m_frame->stack.pop_as<int8x16_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::i8x16_extract_lane_u:
+                m_frame->stack.push((uint32_t)m_frame->stack.pop_as<uint8x16_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::i8x16_replace_lane: {
+                auto lane = m_frame->stack.pop_as<uint32_t>();
+                auto vector = m_frame->stack.pop_as<uint8x16_t>();
+                vector[std::get<uint8_t>(instruction.arguments)] = lane;
+                m_frame->stack.push(vector);
+                break;
+            }
+            case Opcode::i16x8_extract_lane_s:
+                m_frame->stack.push((uint32_t)(int32_t)m_frame->stack.pop_as<int16x8_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::i16x8_extract_lane_u:
+                m_frame->stack.push((uint32_t)m_frame->stack.pop_as<uint16x8_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::i16x8_replace_lane: {
+                auto lane = m_frame->stack.pop_as<uint32_t>();
+                auto vector = m_frame->stack.pop_as<uint16x8_t>();
+                vector[std::get<uint8_t>(instruction.arguments)] = lane;
+                m_frame->stack.push(vector);
+                break;
+            }
+            case Opcode::i32x4_extract_lane:
+                m_frame->stack.push(m_frame->stack.pop_as<uint32x4_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::i32x4_replace_lane: {
+                auto lane = m_frame->stack.pop_as<uint32_t>();
+                auto vector = m_frame->stack.pop_as<uint32x4_t>();
+                vector[std::get<uint8_t>(instruction.arguments)] = lane;
+                m_frame->stack.push(vector);
+                break;
+            }
+            case Opcode::i64x2_extract_lane:
+                m_frame->stack.push(m_frame->stack.pop_as<uint64x2_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::i64x2_replace_lane: {
+                auto lane = m_frame->stack.pop_as<uint64_t>();
+                auto vector = m_frame->stack.pop_as<uint64x2_t>();
+                vector[std::get<uint8_t>(instruction.arguments)] = lane;
+                m_frame->stack.push(vector);
+                break;
+            }
+            case Opcode::f32x4_extract_lane:
+                m_frame->stack.push(m_frame->stack.pop_as<float32x4_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::f32x4_replace_lane: {
+                auto lane = m_frame->stack.pop_as<float>();
+                auto vector = m_frame->stack.pop_as<float32x4_t>();
+                vector[std::get<uint8_t>(instruction.arguments)] = lane;
+                m_frame->stack.push(vector);
+                break;
+            }
+            case Opcode::f64x2_extract_lane:
+                m_frame->stack.push(m_frame->stack.pop_as<float64x2_t>()[std::get<uint8_t>(instruction.arguments)]);
+                break;
+            case Opcode::f64x2_replace_lane: {
+                auto lane = m_frame->stack.pop_as<double>();
+                auto vector = m_frame->stack.pop_as<float64x2_t>();
+                vector[std::get<uint8_t>(instruction.arguments)] = lane;
+                m_frame->stack.push(vector);
+                break;
+            }
             case Opcode::i8x16_eq:
                 run_binary_operation<uint8x16_t, uint8x16_t, operation_eq>();
                 break;
@@ -1129,11 +1232,168 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i32x4_ge_u:
                 run_binary_operation<uint32x4_t, uint32x4_t, operation_ge>();
                 break;
+            case Opcode::f32x4_eq:
+                run_binary_operation<float32x4_t, float32x4_t, operation_eq>();
+                break;
+            case Opcode::f32x4_ne:
+                run_binary_operation<float32x4_t, float32x4_t, operation_ne>();
+                break;
+            case Opcode::f32x4_lt:
+                run_binary_operation<float32x4_t, float32x4_t, operation_lt>();
+                break;
+            case Opcode::f32x4_gt:
+                run_binary_operation<float32x4_t, float32x4_t, operation_gt>();
+                break;
+            case Opcode::f32x4_le:
+                run_binary_operation<float32x4_t, float32x4_t, operation_le>();
+                break;
+            case Opcode::f32x4_ge:
+                run_binary_operation<float32x4_t, float32x4_t, operation_ge>();
+                break;
+            case Opcode::f64x2_eq:
+                run_binary_operation<float64x2_t, float64x2_t, operation_eq>();
+                break;
+            case Opcode::f64x2_ne:
+                run_binary_operation<float64x2_t, float64x2_t, operation_ne>();
+                break;
+            case Opcode::f64x2_lt:
+                run_binary_operation<float64x2_t, float64x2_t, operation_lt>();
+                break;
+            case Opcode::f64x2_gt:
+                run_binary_operation<float64x2_t, float64x2_t, operation_gt>();
+                break;
+            case Opcode::f64x2_le:
+                run_binary_operation<float64x2_t, float64x2_t, operation_le>();
+                break;
+            case Opcode::f64x2_ge:
+                run_binary_operation<float64x2_t, float64x2_t, operation_ge>();
+                break;
+            case Opcode::v128_not:
+                run_unary_operation<uint128_t, operation_not>();
+                break;
+            case Opcode::v128_and:
+                run_binary_operation<uint128_t, uint128_t, operation_and>();
+                break;
+            case Opcode::v128_andnot:
+                run_binary_operation<uint128_t, uint128_t, operation_andnot>();
+                break;
+            case Opcode::v128_or:
+                run_binary_operation<uint128_t, uint128_t, operation_or>();
+                break;
+            case Opcode::v128_xor:
+                run_binary_operation<uint128_t, uint128_t, operation_xor>();
+                break;
+            case Opcode::v128_bitselect: {
+                uint128_t mask = m_frame->stack.pop_as<uint128_t>();
+                uint128_t falseVector = m_frame->stack.pop_as<uint128_t>();
+                uint128_t trueVector = m_frame->stack.pop_as<uint128_t>();
+                m_frame->stack.push((trueVector & mask) | (falseVector & ~mask));
+                break;
+            }
+            case Opcode::v128_any_true:
+                m_frame->stack.push((uint32_t)(m_frame->stack.pop_as<uint128_t>() != 0));
+                break;
+            case Opcode::i8x16_abs:
+                run_unary_operation<int8x16_t, operation_vector_abs>();
+                break;
+            case Opcode::i8x16_neg:
+                run_unary_operation<int8x16_t, operation_neg>();
+                break;
+            case Opcode::i8x16_all_true:
+                run_unary_operation<uint8x16_t, operation_all_true>();
+                break;
+            case Opcode::i8x16_bitmask:
+                run_unary_operation<uint8x16_t, operation_bitmask>();
+                break;
+            case Opcode::i8x16_shl:
+                run_binary_operation<uint8x16_t, uint32_t, operation_vector_shl>();
+                break;
+            case Opcode::i8x16_shr_s:
+                run_binary_operation<int8x16_t, uint32_t, operation_vector_shr>();
+                break;
+            case Opcode::i8x16_shr_u:
+                run_binary_operation<uint8x16_t, uint32_t, operation_vector_shr>();
+                break;
+            case Opcode::i8x16_add:
+                run_binary_operation<uint8x16_t, int8x16_t, operation_add>();
+                break;
+            case Opcode::i8x16_sub:
+                run_binary_operation<uint8x16_t, int8x16_t, operation_sub>();
+                break;
+            case Opcode::i8x16_min_s:
+                run_binary_operation<int8x16_t, int8x16_t, operation_vector_min>();
+                break;
+            case Opcode::i8x16_min_u:
+                run_binary_operation<uint8x16_t, uint8x16_t, operation_vector_min>();
+                break;
+            case Opcode::i8x16_max_s:
+                run_binary_operation<int8x16_t, int8x16_t, operation_vector_max>();
+                break;
+            case Opcode::i8x16_max_u:
+                run_binary_operation<uint8x16_t, uint8x16_t, operation_vector_max>();
+                break;
+            case Opcode::i16x8_abs:
+                run_unary_operation<int16x8_t, operation_vector_abs>();
+                break;
+            case Opcode::i16x8_neg:
+                run_unary_operation<int16x8_t, operation_neg>();
+                break;
+            case Opcode::i16x8_all_true:
+                run_unary_operation<uint16x8_t, operation_all_true>();
+                break;
+            case Opcode::i16x8_bitmask:
+                run_unary_operation<uint16x8_t, operation_bitmask>();
+                break;
+            case Opcode::i16x8_shl:
+                run_binary_operation<uint16x8_t, uint32_t, operation_vector_shl>();
+                break;
+            case Opcode::i16x8_shr_s:
+                run_binary_operation<int16x8_t, uint32_t, operation_vector_shr>();
+                break;
+            case Opcode::i16x8_shr_u:
+                run_binary_operation<uint16x8_t, uint32_t, operation_vector_shr>();
+                break;
+            case Opcode::i16x8_add:
+                run_binary_operation<uint16x8_t, int16x8_t, operation_add>();
+                break;
+            case Opcode::i16x8_sub:
+                run_binary_operation<uint16x8_t, int16x8_t, operation_sub>();
+                break;
+            case Opcode::i16x8_mul:
+                run_binary_operation<uint16x8_t, int16x8_t, operation_mul>();
+                break;
+            case Opcode::i16x8_min_s:
+                run_binary_operation<int16x8_t, int16x8_t, operation_vector_min>();
+                break;
+            case Opcode::i16x8_min_u:
+                run_binary_operation<uint16x8_t, uint16x8_t, operation_vector_min>();
+                break;
+            case Opcode::i16x8_max_s:
+                run_binary_operation<int16x8_t, int16x8_t, operation_vector_max>();
+                break;
+            case Opcode::i16x8_max_u:
+                run_binary_operation<uint16x8_t, uint16x8_t, operation_vector_max>();
+                break;
             case Opcode::i32x4_abs:
                 run_unary_operation<int32x4_t, operation_vector_abs>();
                 break;
             case Opcode::i32x4_neg:
                 run_unary_operation<int32x4_t, operation_neg>();
+                break;
+            case Opcode::i32x4_all_true:
+                run_unary_operation<uint32x4_t, operation_all_true>();
+                break;
+            case Opcode::i32x4_bitmask:
+                run_unary_operation<uint32x4_t, operation_bitmask>();
+                break;
+            case Opcode::i32x4_shl:
+                run_binary_operation<uint32x4_t, uint32_t, operation_vector_shl>();
+                break;
+            case Opcode::i32x4_shr_s:
+                run_binary_operation<int32x4_t, uint32_t, operation_vector_shr>();
+                break;
+            case Opcode::i32x4_shr_u:
+                run_binary_operation<uint32x4_t, uint32_t, operation_vector_shr>();
                 break;
             case Opcode::i32x4_add:
                 run_binary_operation<uint32x4_t, int32x4_t, operation_add>();
@@ -1162,6 +1422,21 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i64x2_neg:
                 run_unary_operation<int64x2_t, operation_neg>();
                 break;
+            case Opcode::i64x2_all_true:
+                run_unary_operation<uint64x2_t, operation_all_true>();
+                break;
+            case Opcode::i64x2_bitmask:
+                run_unary_operation<uint64x2_t, operation_bitmask>();
+                break;
+            case Opcode::i64x2_shl:
+                run_binary_operation<uint64x2_t, uint32_t, operation_vector_shl>();
+                break;
+            case Opcode::i64x2_shr_s:
+                run_binary_operation<int64x2_t, uint32_t, operation_vector_shr>();
+                break;
+            case Opcode::i64x2_shr_u:
+                run_binary_operation<uint64x2_t, uint32_t, operation_vector_shr>();
+                break;
             case Opcode::i64x2_add:
                 run_binary_operation<uint64x2_t, int64x2_t, operation_add>();
                 break;
@@ -1189,6 +1464,66 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i64x2_ge_s:
                 run_binary_operation<int64x2_t, int64x2_t, operation_ge>();
                 break;
+            case Opcode::f32x4_abs:
+                run_unary_operation<float32x4_t, operation_vector_abs>();
+                break;
+            case Opcode::f32x4_neg:
+                run_unary_operation<float32x4_t, operation_neg>();
+                break;
+            case Opcode::f32x4_add:
+                run_binary_operation<float32x4_t, float32x4_t, operation_add>();
+                break;
+            case Opcode::f32x4_sub:
+                run_binary_operation<float32x4_t, float32x4_t, operation_sub>();
+                break;
+            case Opcode::f32x4_mul:
+                run_binary_operation<float32x4_t, float32x4_t, operation_mul>();
+                break;
+            case Opcode::f32x4_div:
+                run_binary_operation<float32x4_t, float32x4_t, operation_div>();
+                break;
+            case Opcode::f32x4_min:
+                run_binary_operation<float32x4_t, float32x4_t, operation_vector_min>();
+                break;
+            case Opcode::f32x4_max:
+                run_binary_operation<float32x4_t, float32x4_t, operation_vector_max>();
+                break;
+            case Opcode::f32x4_pmin:
+                run_binary_operation<float32x4_t, float32x4_t, operation_vector_min>();
+                break;
+            case Opcode::f32x4_pmax:
+                run_binary_operation<float32x4_t, float32x4_t, operation_vector_max>();
+                break;
+            case Opcode::f64x2_abs:
+                run_unary_operation<float64x2_t, operation_vector_abs>();
+                break;
+            case Opcode::f64x2_neg:
+                run_unary_operation<float64x2_t, operation_neg>();
+                break;
+            case Opcode::f64x2_add:
+                run_binary_operation<float64x2_t, float64x2_t, operation_add>();
+                break;
+            case Opcode::f64x2_sub:
+                run_binary_operation<float64x2_t, float64x2_t, operation_sub>();
+                break;
+            case Opcode::f64x2_mul:
+                run_binary_operation<float64x2_t, float64x2_t, operation_mul>();
+                break;
+            case Opcode::f64x2_div:
+                run_binary_operation<float64x2_t, float32x4_t, operation_div>();
+                break;
+            case Opcode::f64x2_min:
+                run_binary_operation<float64x2_t, float64x2_t, operation_vector_min>();
+                break;
+            case Opcode::f64x2_max:
+                run_binary_operation<float64x2_t, float64x2_t, operation_vector_max>();
+                break;
+            case Opcode::f64x2_pmin:
+                run_binary_operation<float64x2_t, float64x2_t, operation_vector_min>();
+                break;
+            case Opcode::f64x2_pmax:
+                run_binary_operation<float64x2_t, float64x2_t, operation_vector_max>();
+                break;
             default:
                 fprintf(stderr, "Error: Unknown opcode 0x%x\n", static_cast<uint32_t>(instruction.opcode));
                 throw Trap();
@@ -1202,7 +1537,10 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
         {
             auto returnValue = m_frame->stack.pop();
             if (get_value_type(returnValue) != function->type.returns[i])
+            {
+                printf("Error: Unxpected return value on the stack: %s, expected %s\n", get_type_name(get_value_type(returnValue)).c_str(), get_type_name(function->type.returns[i]).c_str());  
                 throw Trap();
+            }
             returnValues.push_back(returnValue);
         }
 

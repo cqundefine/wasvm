@@ -120,9 +120,9 @@ public:
 
     // Constructor that uses the IsValueType concept
     template <IsValueType T>
-    Value(const T& value) : m_type(get_type_for<T>())
+    Value(const T& value) : m_type(get_type_for<ToValueType<T>>())
     {
-        new (&m_data) T(value);
+        new (&m_data) ToValueType<T>((ToValueType<T>)value);
     }
 
     // Default copy and move constructors/assignments

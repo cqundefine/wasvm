@@ -113,6 +113,40 @@ Value operation_rem(LhsType a, RhsType b)
     return (ToValueType<LhsType>)(a % b);
 }
 
+template <typename LhsType, typename RhsType>
+Value operation_andnot(LhsType a, RhsType b)
+{
+    return a & ~b;
+}
+
+template <IsVector LhsType, typename RhsType>
+Value operation_vector_shl(LhsType a, RhsType b)
+{
+    return a << (b % (sizeof(VectorElement<LhsType>) * 8));
+}
+
+template <IsVector LhsType, typename RhsType>
+Value operation_vector_shr(LhsType a, RhsType b)
+{
+    return a >> (b % (sizeof(VectorElement<LhsType>) * 8));
+}
+
+template <IsVector LhsType, IsVector RhsType>
+Value operation_vector_swizzle(LhsType a, RhsType b)
+{
+    // TODO: Use __builtin_shuffle on GCC
+    LhsType result;
+    constexpr auto laneCount = sizeof(LhsType) / sizeof(VectorElement<LhsType>);
+    for (size_t i = 0; i < laneCount; i++)
+    {
+        if (b[i] < laneCount)
+            result[i] = a[b[i]];
+        else
+            result[i] = 0;
+    }
+    return result;
+}
+
 #define GENERIC_UNARY_OPERATION_FUNCTION(name, function) \
     template <typename T>                                \
     Value operation_##name(T a)                          \
@@ -125,6 +159,7 @@ GENERIC_UNARY_OPERATION_FUNCTION(ctz, std::countr_zero);
 GENERIC_UNARY_OPERATION_FUNCTION(popcnt, std::popcount);
 GENERIC_UNARY_OPERATION_FUNCTION(abs, std::abs);
 GENERIC_UNARY_OPERATION_FUNCTION(neg, -);
+GENERIC_UNARY_OPERATION_FUNCTION(not, ~);
 GENERIC_UNARY_OPERATION_FUNCTION(ceil, std::ceil);
 GENERIC_UNARY_OPERATION_FUNCTION(floor, std::floor);
 GENERIC_UNARY_OPERATION_FUNCTION(trunc, std::trunc);
@@ -181,4 +216,25 @@ Value operation_trunc_sat(T a)
         return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().max();
 
     return (ToValueType<TruncatedType>)(TruncatedType)a;
+}
+
+template <IsVector T>
+Value operation_all_true(T a)
+{
+    constexpr auto laneCount = sizeof(T) / sizeof(VectorElement<T>);
+    for (size_t i = 0; i < laneCount; i++)
+        if (a[i] == 0)
+            return (uint32_t)0;
+    return (uint32_t)1;
+}
+
+template <IsVector T>
+Value operation_bitmask(T a)
+{
+    constexpr auto laneCount = sizeof(T) / sizeof(VectorElement<T>);
+    uint32_t result = 0;
+    for (size_t i = 0; i < laneCount; i++)
+        if (a[i] < 0)
+            result |= (1 << i);
+    return result;
 }
