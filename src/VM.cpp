@@ -1028,6 +1028,24 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::v128_load:
                 run_load_instruction<uint128_t, uint128_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
+            case Opcode::v128_load8x8_s:
+                run_load_lanes_instruction<int16x8_t, int8_t, int16_t>(std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
+            case Opcode::v128_load8x8_u:
+                run_load_lanes_instruction<uint16x8_t, uint8_t, uint16_t>(std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
+            case Opcode::v128_load16x4_s:
+                run_load_lanes_instruction<int32x4_t, int16_t, int32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
+            case Opcode::v128_load16x4_u:
+                run_load_lanes_instruction<uint32x4_t, uint16_t, uint32_t>(std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
+            case Opcode::v128_load32x2_s:
+                run_load_lanes_instruction<int64x2_t, int32_t, int64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
+            case Opcode::v128_load32x2_u:
+                run_load_lanes_instruction<uint64x2_t, uint32_t, uint64_t>(std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
             case Opcode::v128_store:
                 run_store_instruction<uint128_t, uint128_t>(std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
@@ -1288,6 +1306,30 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::v128_any_true:
                 m_frame->stack.push((uint32_t)(m_frame->stack.pop_as<uint128_t>() != 0));
                 break;
+            case Opcode::v128_load8_lane:
+                run_load_lane_instruction<uint8x16_t, uint8_t, uint8_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
+            case Opcode::v128_load16_lane:
+                run_load_lane_instruction<uint16x8_t, uint16_t, uint16_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
+            case Opcode::v128_load32_lane:
+                run_load_lane_instruction<uint32x4_t, uint32_t, uint32_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
+            case Opcode::v128_load64_lane:
+                run_load_lane_instruction<uint64x2_t, uint64_t, uint64_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
+            case Opcode::v128_store8_lane:
+                run_store_lane_instruction<uint8x16_t, uint8_t, uint8_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
+            case Opcode::v128_store16_lane:
+                run_store_lane_instruction<uint16x8_t, uint16_t, uint16_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
+            case Opcode::v128_store32_lane:
+                run_store_lane_instruction<uint32x4_t, uint32_t, uint32_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
+            case Opcode::v128_store64_lane:
+                run_store_lane_instruction<uint64x2_t, uint64_t, uint64_t>(std::get<LoadStoreLaneArguments>(instruction.arguments));
+                break;
             case Opcode::i8x16_abs:
                 run_unary_operation<int8x16_t, operation_vector_abs>();
                 break;
@@ -1299,6 +1341,18 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 break;
             case Opcode::i8x16_bitmask:
                 run_unary_operation<uint8x16_t, operation_bitmask>();
+                break;
+            case Opcode::f32x4_ceil:
+                run_unary_operation<float32x4_t, operation_vector_ceil>();
+                break;
+            case Opcode::f32x4_floor:
+                run_unary_operation<float32x4_t, operation_vector_floor>();
+                break;
+            case Opcode::f32x4_trunc:
+                run_unary_operation<float32x4_t, operation_vector_trunc>();
+                break;
+            case Opcode::f32x4_nearest:
+                run_unary_operation<float32x4_t, operation_vector_nearest>();
                 break;
             case Opcode::i8x16_shl:
                 run_binary_operation<uint8x16_t, uint32_t, operation_vector_shl>();
@@ -1315,6 +1369,12 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i8x16_sub:
                 run_binary_operation<uint8x16_t, int8x16_t, operation_sub>();
                 break;
+            case Opcode::f64x2_ceil:
+                run_unary_operation<float64x2_t, operation_vector_ceil>();
+                break;
+            case Opcode::f64x2_floor:
+                run_unary_operation<float64x2_t, operation_vector_floor>();
+                break;
             case Opcode::i8x16_min_s:
                 run_binary_operation<int8x16_t, int8x16_t, operation_vector_min>();
                 break;
@@ -1327,17 +1387,35 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i8x16_max_u:
                 run_binary_operation<uint8x16_t, uint8x16_t, operation_vector_max>();
                 break;
+            case Opcode::f64x2_trunc:
+                run_unary_operation<float64x2_t, operation_vector_trunc>();
+                break;
             case Opcode::i16x8_abs:
                 run_unary_operation<int16x8_t, operation_vector_abs>();
                 break;
             case Opcode::i16x8_neg:
                 run_unary_operation<int16x8_t, operation_neg>();
                 break;
+            case Opcode::i16x8_q15mulr_sat_s:
+                run_binary_operation<int16x8_t, int16x8_t, operation_vector_q15mulr_sat>();
+                break;
             case Opcode::i16x8_all_true:
                 run_unary_operation<uint16x8_t, operation_all_true>();
                 break;
             case Opcode::i16x8_bitmask:
                 run_unary_operation<uint16x8_t, operation_bitmask>();
+                break;
+            case Opcode::i16x8_extend_low_i8x16_s: 
+                run_vector_extend<int8x16_t, int16x8_t, 0>();
+                break;
+            case Opcode::i16x8_extend_high_i8x16_s:
+                run_vector_extend<int8x16_t, int16x8_t, 8>();
+                break;
+            case Opcode::i16x8_extend_low_i8x16_u:
+                run_vector_extend<uint8x16_t, uint16x8_t, 0>();
+                break;
+            case Opcode::i16x8_extend_high_i8x16_u:
+                run_vector_extend<uint8x16_t, uint16x8_t, 8>();
                 break;
             case Opcode::i16x8_shl:
                 run_binary_operation<uint16x8_t, uint32_t, operation_vector_shl>();
@@ -1354,6 +1432,9 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i16x8_sub:
                 run_binary_operation<uint16x8_t, int16x8_t, operation_sub>();
                 break;
+            case Opcode::f64x2_nearest:
+                run_unary_operation<float64x2_t, operation_vector_nearest>();
+                break;
             case Opcode::i16x8_mul:
                 run_binary_operation<uint16x8_t, int16x8_t, operation_mul>();
                 break;
@@ -1369,6 +1450,18 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i16x8_max_u:
                 run_binary_operation<uint16x8_t, uint16x8_t, operation_vector_max>();
                 break;
+            case Opcode::i16x8_extmul_low_i8x16_s: 
+                run_vector_extend_multiply<int8x16_t, int16x8_t, 0>();
+                break;
+            case Opcode::i16x8_extmul_high_i8x16_s:
+                run_vector_extend_multiply<int8x16_t, int16x8_t, 8>();
+                break;
+            case Opcode::i16x8_extmul_low_i8x16_u:
+                run_vector_extend_multiply<uint8x16_t, uint16x8_t, 0>();
+                break;
+            case Opcode::i16x8_extmul_high_i8x16_u:
+                run_vector_extend_multiply<uint8x16_t, uint16x8_t, 8>();
+                break;
             case Opcode::i32x4_abs:
                 run_unary_operation<int32x4_t, operation_vector_abs>();
                 break;
@@ -1380,6 +1473,18 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 break;
             case Opcode::i32x4_bitmask:
                 run_unary_operation<uint32x4_t, operation_bitmask>();
+                break;
+            case Opcode::i32x4_extend_low_i16x8_s:
+                run_vector_extend<int16x8_t, int32x4_t, 0>();
+                break;
+            case Opcode::i32x4_extend_high_i16x8_s:
+                run_vector_extend<int16x8_t, int32x4_t, 4>();
+                break;
+            case Opcode::i32x4_extend_low_i16x8_u:
+                run_vector_extend<uint16x8_t, uint32x4_t, 0>();
+                break;
+            case Opcode::i32x4_extend_high_i16x8_u:
+                run_vector_extend<uint16x8_t, uint32x4_t, 4>();
                 break;
             case Opcode::i32x4_shl:
                 run_binary_operation<uint32x4_t, uint32_t, operation_vector_shl>();
@@ -1411,6 +1516,18 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i32x4_max_u:
                 run_binary_operation<uint32x4_t, uint32x4_t, operation_vector_max>();
                 break;
+            case Opcode::i32x4_extmul_low_i16x8_s:
+                run_vector_extend_multiply<int16x8_t, int32x4_t, 0>();
+                break;
+            case Opcode::i32x4_extmul_high_i16x8_s:
+                run_vector_extend_multiply<int16x8_t, int32x4_t, 4>();
+                break;
+            case Opcode::i32x4_extmul_low_i16x8_u:
+                run_vector_extend_multiply<uint16x8_t, uint32x4_t, 0>();
+                break;
+            case Opcode::i32x4_extmul_high_i16x8_u:
+                run_vector_extend_multiply<uint16x8_t, uint32x4_t, 4>();
+                break;
             case Opcode::i64x2_abs:
                 run_unary_operation<int64x2_t, operation_vector_abs>();
                 break;
@@ -1422,6 +1539,18 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 break;
             case Opcode::i64x2_bitmask:
                 run_unary_operation<uint64x2_t, operation_bitmask>();
+                break;
+            case Opcode::i64x2_extend_low_i32x4_s:
+                run_vector_extend<int32x4_t, int64x2_t, 0>();
+                break;
+            case Opcode::i64x2_extend_high_i32x4_s:
+                run_vector_extend<int32x4_t, int64x2_t, 2>();
+                break;
+            case Opcode::i64x2_extend_low_i32x4_u:
+                run_vector_extend<uint32x4_t, uint64x2_t, 0>();
+                break;
+            case Opcode::i64x2_extend_high_i32x4_u:
+                run_vector_extend<uint32x4_t, uint64x2_t, 2>();
                 break;
             case Opcode::i64x2_shl:
                 run_binary_operation<uint64x2_t, uint32_t, operation_vector_shl>();
@@ -1458,6 +1587,18 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 break;
             case Opcode::i64x2_ge_s:
                 run_binary_operation<int64x2_t, int64x2_t, operation_ge>();
+                break;
+            case Opcode::i64x2_extmul_low_i32x4_s:
+                run_vector_extend_multiply<int32x4_t, int64x2_t, 0>();
+                break;
+            case Opcode::i64x2_extmul_high_i32x4_s:
+                run_vector_extend_multiply<int32x4_t, int64x2_t, 2>();
+                break;
+            case Opcode::i64x2_extmul_low_i32x4_u:
+                run_vector_extend_multiply<uint32x4_t, uint64x2_t, 0>();
+                break;
+            case Opcode::i64x2_extmul_high_i32x4_u:
+                run_vector_extend_multiply<uint32x4_t, uint64x2_t, 2>();
                 break;
             case Opcode::f32x4_abs:
                 run_unary_operation<float32x4_t, operation_vector_abs>();
@@ -1699,6 +1840,85 @@ void VM::call_function(Ref<Function> function)
 
     for (const auto& returned : returnedValues)
         m_frame->stack.push(returned);
+}
+
+template <IsVector VectorType, typename ActualType, typename LaneType>
+void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
+{
+    auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+
+    VectorType vector = m_frame->stack.pop_as<VectorType>();
+    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+
+    if ((uint64_t)address + args.memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
+        throw Trap();
+
+    ActualType value;
+    memcpy(&value, &memory->data[address + args.memArg.offset], sizeof(ActualType));
+
+    vector[args.lane] = (LaneType)value;
+    m_frame->stack.push(vector);
+}
+
+template <IsVector VectorType, typename ActualType, typename StackType>
+void VM::run_store_lane_instruction(const LoadStoreLaneArguments& args)
+{
+    auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+
+    VectorType vector = m_frame->stack.pop_as<VectorType>();
+    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+
+    if ((uint64_t)address + args.memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
+        throw Trap();
+
+    ActualType value = vector[args.lane];
+    memcpy(&memory->data[address + args.memArg.offset], &value, sizeof(ActualType));
+}
+
+template <IsVector VectorType, typename ActualType, typename LaneType>
+void VM::run_load_lanes_instruction(const WasmFile::MemArg& memArg)
+{
+    constexpr auto laneCount = sizeof(VectorType) / sizeof(VectorElement<VectorType>);
+    auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+
+    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+
+    if ((uint64_t)address + memArg.offset + (laneCount * sizeof(ActualType)) > memory->size * WASM_PAGE_SIZE)
+        throw Trap();
+
+    VectorType vector;
+    for (size_t i = 0; i < laneCount; i++)
+    {
+        ActualType value;
+        memcpy(&memory->data[address + memArg.offset + (i * sizeof(ActualType))], &value, sizeof(ActualType));
+        vector[i] = (LaneType)value;
+    }
+    m_frame->stack.push(vector);
+}
+
+template <IsVector SourceVectorType, IsVector DestinationVectorType, size_t SourceOffset>
+void VM::run_vector_extend()
+{
+    // TODO: Find a SIMD instruction way to do this
+    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
+    SourceVectorType vector = m_frame->stack.pop_as<SourceVectorType>();
+    DestinationVectorType result {};
+    for (size_t i = 0; i < laneCount; i++)
+        result[i] = vector[i + SourceOffset];
+    m_frame->stack.push(result);
+}
+
+template <IsVector SourceVectorType, IsVector DestinationVectorType, size_t SourceOffset>
+void VM::run_vector_extend_multiply()
+{
+    // TODO: Find a SIMD instruction way to do this
+    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
+    SourceVectorType a = m_frame->stack.pop_as<SourceVectorType>();
+    SourceVectorType b = m_frame->stack.pop_as<SourceVectorType>();
+    DestinationVectorType result {};
+    for (size_t i = 0; i < laneCount; i++)
+        result[i] = a[i + SourceOffset] * b[i + SourceOffset];
+    m_frame->stack.push(result);
 }
 
 VM::ImportLocation VM::find_import(const std::string& environment, const std::string& name, WasmFile::ImportType importType)

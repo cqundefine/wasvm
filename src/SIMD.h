@@ -1,5 +1,6 @@
 #pragma once
 
+#include <smmintrin.h>
 #include <Util.h>
 
 using int8x2_t = int8_t __attribute__((vector_size(2)));
@@ -86,4 +87,52 @@ T vector_max(T a, T b)
         return result;                                                    \
     }
 
-GENERIC_VECTOR_UNARY_INSTRUCTION_FUNCTION(abs, std::abs);
+template <IsVector T>
+T vector_abs(T a)
+{
+    return (a < 0) ? -a : a;
+}
+
+template <IsVector T>
+T vector_ceil(T a)
+{
+    if constexpr (std::is_same<T, float32x4_t>())
+        return _mm_ceil_ps(a);
+    else if constexpr (std::is_same<T, float64x2_t>())
+        return _mm_ceil_pd(a);
+    else
+        static_assert(false, "Unsupported vector for ceil");
+}
+
+template <IsVector T>
+T vector_floor(T a)
+{
+    if constexpr (std::is_same<T, float32x4_t>())
+        return _mm_floor_ps(a);
+    else if constexpr (std::is_same<T, float64x2_t>())
+        return _mm_floor_pd(a);
+    else
+        static_assert(false, "Unsupported vector for floor");
+}
+
+template <IsVector T>
+T vector_trunc(T a)
+{
+    if constexpr (std::is_same<T, float32x4_t>())
+        return _mm_round_ps(a, _MM_FROUND_TRUNC);
+    else if constexpr (std::is_same<T, float64x2_t>())
+        return _mm_round_pd(a, _MM_FROUND_TRUNC);
+    else
+        static_assert(false, "Unsupported vector for trunc");
+}
+
+template <IsVector T>
+T vector_nearest(T a)
+{
+    if constexpr (std::is_same<T, float32x4_t>())
+        return _mm_round_ps(a, _MM_FROUND_NINT);
+    else if constexpr (std::is_same<T, float64x2_t>())
+        return _mm_round_pd(a, _MM_FROUND_NINT);
+    else
+        static_assert(false, "Unsupported vector for nearest");
+}

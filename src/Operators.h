@@ -147,6 +147,17 @@ Value operation_vector_swizzle(LhsType a, RhsType b)
     return result;
 }
 
+template <IsVector LhsType, IsVector RhsType>
+Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
+{
+    // TODO: Find a SIMD instruction way to do this
+    static_assert(std::is_same<LhsType, int16x8_t>() && std::is_same<RhsType, int16x8_t>(), "Unsupported vector type for q15mulr_sat");
+    LhsType result;
+    for (size_t i = 0; i < 8; i++)
+        result[i] = (a[i] * b[i] + 0x4000) >> 15;
+    return result;
+}
+
 #define GENERIC_UNARY_OPERATION_FUNCTION(name, function) \
     template <typename T>                                \
     Value operation_##name(T a)                          \
@@ -167,6 +178,10 @@ GENERIC_UNARY_OPERATION_FUNCTION(nearest, std::nearbyint);
 GENERIC_UNARY_OPERATION_FUNCTION(sqrt, std::sqrt);
 
 GENERIC_UNARY_OPERATION_FUNCTION(vector_abs, vector_abs);
+GENERIC_UNARY_OPERATION_FUNCTION(vector_ceil, vector_ceil);
+GENERIC_UNARY_OPERATION_FUNCTION(vector_floor, vector_floor);
+GENERIC_UNARY_OPERATION_FUNCTION(vector_trunc, vector_trunc);
+GENERIC_UNARY_OPERATION_FUNCTION(vector_nearest, vector_nearest);
 
 template <typename T>
 Value operation_eqz(T a)

@@ -61,6 +61,18 @@ private:
     static void branch_to_label(uint32_t index);
     static void call_function(Ref<Function> function);
 
+    template <IsVector VectorType, typename ActualType, typename LaneType>
+    static void run_load_lane_instruction(const LoadStoreLaneArguments& args);
+    template <IsVector VectorType, typename ActualType, typename StackType>
+    static void run_store_lane_instruction(const LoadStoreLaneArguments& args);
+
+    template <IsVector VectorType, typename ActualType, typename LaneType>
+    static void run_load_lanes_instruction(const WasmFile::MemArg& memArg);
+    template <IsVector SourceVectorType, IsVector DestinationVectorType, size_t SourceOffset>
+    static void run_vector_extend();
+    template <IsVector SourceVectorType, IsVector DestinationVectorType, size_t SourceOffset>
+    static void run_vector_extend_multiply();
+
     struct ImportLocation
     {
         Ref<Module> module;
