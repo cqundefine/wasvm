@@ -90,7 +90,7 @@ namespace WasmFile
         std::string name;
 
         // FIXME: Make this a union
-        uint32_t functionIndex;
+        uint32_t functionTypeIndex;
 
         Type tableRefType;
         Limits tableLimits;
@@ -151,6 +151,7 @@ namespace WasmFile
         std::vector<uint32_t> functionIndexes;
         std::vector<std::vector<Instruction>> referencesExpr;
         ElementMode mode;
+        Type valueType;
 
         static Element read_from_stream(Stream& stream);
     };
@@ -195,6 +196,7 @@ namespace WasmFile
         std::vector<Element> elements;
         std::vector<Code> codeBlocks;
         std::vector<Data> dataBlocks;
+        std::optional<uint32_t> dataCount;
 
         static Ref<WasmFile> read_from_stream(Stream& stream);
 

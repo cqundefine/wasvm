@@ -1,11 +1,9 @@
 #include <Compiler.h>
-#include <MemoryStream.h>
 #include <Opcode.h>
 #include <Operators.h>
 #include <Type.h>
 #include <Util.h>
 #include <VM.h>
-#include <WASI.h>
 #include <cstring>
 
 void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
@@ -165,10 +163,11 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
     m_frame_stack.push(m_frame);
     m_frame = new Frame(mod);
 
-    for (uint32_t i = 0; i < args.size(); i++)
-        m_frame->locals.push_back(args.at(i));
+    // FIXME: Are we sure that args is the correct size
+    for (const auto& param : args)
+        m_frame->locals.push_back(param);
 
-    for (const auto& local : function->code.locals)
+    for (const auto local : function->code.locals)
         m_frame->locals.push_back(default_value_for_type(local));
 
     // try
@@ -263,6 +262,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 std::reverse(returnValues.begin(), returnValues.end());
 
+                // FIXME: This shouldn't be needed after validator is done
                 for (size_t i = 0; i < returnValues.size(); i++)
                     if (get_value_type(returnValues[i]) != function->type.returns[i])
                         throw Trap();
@@ -1405,7 +1405,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i16x8_bitmask:
                 run_unary_operation<uint16x8_t, operation_bitmask>();
                 break;
-            case Opcode::i16x8_extend_low_i8x16_s: 
+            case Opcode::i16x8_extend_low_i8x16_s:
                 run_vector_extend<int8x16_t, int16x8_t, 0>();
                 break;
             case Opcode::i16x8_extend_high_i8x16_s:
@@ -1450,7 +1450,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::i16x8_max_u:
                 run_binary_operation<uint16x8_t, uint16x8_t, operation_vector_max>();
                 break;
-            case Opcode::i16x8_extmul_low_i8x16_s: 
+            case Opcode::i16x8_extmul_low_i8x16_s:
                 run_vector_extend_multiply<int8x16_t, int16x8_t, 0>();
                 break;
             case Opcode::i16x8_extmul_high_i8x16_s:
@@ -1824,17 +1824,17 @@ void VM::call_function(Ref<Function> function)
 {
     std::vector<Value> args;
     for (size_t i = 0; i < function->type.params.size(); i++)
-    {
         args.push_back(m_frame->stack.pop());
-    }
     std::reverse(args.begin(), args.end());
 
+    // FIXME: This shouldn't be needed after validator is done
     for (size_t i = 0; i < function->type.params.size(); i++)
     {
         if (get_value_type(args.at(i)) != function->type.params.at(i))
             throw Trap();
     }
 
+    // FIXME: Are we sure the return values are correct
     std::vector<Value> returnedValues;
     returnedValues = run_function(function->mod, function, args);
 
@@ -1889,7 +1889,7 @@ void VM::run_load_lanes_instruction(const WasmFile::MemArg& memArg)
     VectorType vector;
     for (size_t i = 0; i < laneCount; i++)
     {
-        ActualType value;
+        ActualType value {};
         memcpy(&memory->data[address + memArg.offset + (i * sizeof(ActualType))], &value, sizeof(ActualType));
         vector[i] = (LaneType)value;
     }

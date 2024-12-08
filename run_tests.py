@@ -21,6 +21,7 @@ passed = 0
 failed = 0
 skipped = 0
 failed_to_load = 0
+vm_error = 0
 
 crashes = []
 
@@ -39,6 +40,10 @@ for filename in tests:
             crashes.append(filename)
         else:
             data = json.loads(process.stdout.decode().splitlines()[-1])
+            if data["vm_error"]:
+                vm_error += 1
+                print(f"{filename:<50} {colored("vm error", DARK_RED)}")
+                continue
             if data["passed"] == data["total"]:
                 pass
                 # print(f'{filename:<50} {colored("all passed", GREEN)}')
@@ -56,6 +61,7 @@ print(f"{"Passed:":<50} {colored(passed, GREEN)}")
 print(f"{"Failed:":<50} {colored(failed, RED)}")
 print(f"{"Skipped:":<50} {colored(skipped, YELLOW)}")
 print(f"{"Failed to load:":<50} {colored(failed_to_load, DARK_RED)}")
+print(f"{"VM errors:":<50} {colored(vm_error, DARK_RED)}")
 if len(crashes) != 0:
     print("Crashes:")
     for crash in crashes:

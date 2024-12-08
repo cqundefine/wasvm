@@ -11,6 +11,9 @@ add_compile_options(-fdiagnostics-color=always)
 
 add_compile_options(-Wimplicit-fallthrough -Wswitch-default -Wno-user-defined-literals -Wno-explicit-specialization-storage-class -march=x86-64-v2)
 
+#add_compile_options(-fsanitize=address)
+#add_link_options(-fsanitize=address)
+
 file(GLOB_RECURSE SOURCES src/*.cpp)
 add_executable(wasvm ${SOURCES})
 

@@ -189,10 +189,25 @@ TestStats run_tests(const char* path)
 
     chdir("tests");
 
-    FileStream specTestStream("spectest.wasm");
-    auto specTest = WasmFile::WasmFile::read_from_stream(specTestStream);
-    VM::load_module(specTest);
-    VM::register_module("spectest", VM::current_module());
+    try
+    {
+        FileStream specTestStream("spectest.wasm");
+        auto specTest = WasmFile::WasmFile::read_from_stream(specTestStream);
+        VM::load_module(specTest);
+        VM::register_module("spectest", VM::current_module());
+    }
+    catch (WasmFile::InvalidWASMException e)
+    {
+        printf("Failed to load spectest wasm\n");
+        stats.vm_error = true;
+        return stats;
+    }
+    catch (Trap e)
+    {
+        printf("Failed to load spectest wasm\n");
+        stats.vm_error = true;
+        return stats;
+    }
 
     chdir(path);
 
@@ -369,70 +384,63 @@ TestStats run_tests(const char* path)
                 printf("%s/%u passed\n", path, line);
             }
         }
-        // else if (type == "assert_invalid" || type == "assert_malformed")
-        // {
-        //     if(command["module_type"] != "binary")
-        //     {
-        //         // We are a VM, not a compiler
-        //         continue;
-        //     }
+        else if (type == "assert_invalid" || type == "assert_malformed")
+        {
+            if (command["module_type"] != "binary")
+            {
+                // We are a VM, not a compiler
+                continue;
+            }
 
-        //     stats.total++;
+            stats.total++;
 
-        //     FileStream fileStream(command["filename"].get<std::string>().c_str());
-        //     try
-        //     {
-        //         auto file = WasmFile::WasmFile::read_from_stream(fileStream);
-        //         // FIXME: We probably shouldn't try to instantiate those
-        //         VM::load_module(file, true);
+            FileStream fileStream(command["filename"].get<std::string>().c_str());
+            try
+            {
+                auto file = WasmFile::WasmFile::read_from_stream(fileStream);
 
-        //         stats.failed++;
-        //         printf("%s/%u expected to not load, loaded\n", path, line);
-        //     }
-        //     catch (WasmFile::InvalidWASMException e)
-        //     {
-        //         stats.passed++;
-        //         printf("%s/%u passed\n", path, line);
-        //     }
-        //     catch (Trap e)
-        //     {
-        //         stats.passed++;
-        //         printf("%s/%u passed\n", path, line);
-        //     }
-        // }
-        // else if (type == "assert_uninstantiable" || type == "assert_unlinkable")
-        // {
-        //     if(command["module_type"] != "binary")
-        //     {
-        //         // We are a VM, not a compiler
-        //         continue;
-        //     }
+                stats.failed++;
+                printf("%s/%u expected to not load, loaded\n", path, line);
+            }
+            catch (WasmFile::InvalidWASMException e)
+            {
+                stats.passed++;
+                printf("%s/%u passed\n", path, line);
+            }
+        }
+        else if (type == "assert_uninstantiable" || type == "assert_unlinkable")
+        {
+            if (command["module_type"] != "binary")
+            {
+                // We are a VM, not a compiler
+                continue;
+            }
 
-        //     stats.total++;
+            stats.total++;
 
-        //     FileStream fileStream(command["filename"].get<std::string>().c_str());
-        //     try
-        //     {
-        //         auto file = WasmFile::WasmFile::read_from_stream(fileStream);
-        //         VM::load_module(file, true);
+            FileStream fileStream(command["filename"].get<std::string>().c_str());
+            try
+            {
+                auto file = WasmFile::WasmFile::read_from_stream(fileStream);
+                VM::load_module(file, true);
 
-        //         stats.failed++;
-        //         printf("%s/%u expected to not instantiate, instantiated\n", path, line);
-        //     }
-        //     catch (WasmFile::InvalidWASMException e)
-        //     {
-        //         stats.failed++;
-        //         printf("%s/%u failed: module is invalid\n", path, line);
-        //     }
-        //     catch (Trap e)
-        //     {
-        //         stats.passed++;
-        //         printf("%s/%u passed\n", path, line);
-        //     }
-        // }
+                stats.failed++;
+                printf("%s/%u expected to not instantiate, instantiated\n", path, line);
+            }
+            catch (WasmFile::InvalidWASMException e)
+            {
+                stats.failed++;
+                printf("%s/%u failed: module is invalid\n", path, line);
+            }
+            catch (Trap e)
+            {
+                stats.passed++;
+                printf("%s/%u passed\n", path, line);
+            }
+        }
         else
         {
-            // printf("command type unsupported: %s\n", type.c_str());
+            printf("command type unsupported: %s\n", type.c_str());
         }
     }
 

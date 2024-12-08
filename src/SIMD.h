@@ -1,7 +1,7 @@
 #pragma once
 
-#include <smmintrin.h>
 #include <Util.h>
+#include <smmintrin.h>
 
 using int8x2_t = int8_t __attribute__((vector_size(2)));
 using int8x4_t = int8_t __attribute__((vector_size(4)));

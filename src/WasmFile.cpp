@@ -3,6 +3,7 @@
 #include <Parser.h>
 #include <Type.h>
 #include <Util.h>
+#include <Validator.h>
 #include <WasmFile.h>
 
 namespace WasmFile
@@ -77,7 +78,7 @@ namespace WasmFile
                 .type = ImportType::Function,
                 .environment = environment,
                 .name = name,
-                .functionIndex = stream.read_leb<uint32_t>(),
+                .functionTypeIndex = stream.read_leb<uint32_t>(),
             };
         }
         else if (type == 1)
@@ -165,6 +166,7 @@ namespace WasmFile
     {
         uint32_t type = stream.read_leb<uint32_t>();
 
+        // FIXME: The type is a bitfield
         if (type == 0)
         {
             return Element {
@@ -173,37 +175,44 @@ namespace WasmFile
                 .expr = parse(stream, s_currentWasmFile),
                 .functionIndexes = stream.read_vec<uint32_t>(),
                 .mode = ElementMode::Active,
+                .valueType = Type::funcref,
             };
         }
         else if (type == 1)
         {
-            stream.read_leb<uint8_t>();
+            if (stream.read_leb<uint8_t>() != 0)
+                throw InvalidWASMException();
             return Element {
                 .type = type,
                 .functionIndexes = stream.read_vec<uint32_t>(),
                 .mode = ElementMode::Passive,
+                .valueType = Type::funcref,
             };
         }
         else if (type == 2)
         {
             uint32_t table = stream.read_leb<uint32_t>();
             std::vector<Instruction> expr = parse(stream, s_currentWasmFile);
-            stream.read_little_endian<uint8_t>();
+            if (stream.read_leb<uint8_t>() != 0)
+                throw InvalidWASMException();
             return {
                 .type = type,
                 .table = table,
                 .expr = expr,
                 .functionIndexes = stream.read_vec<uint32_t>(),
                 .mode = ElementMode::Active,
+                .valueType = Type::funcref,
             };
         }
         else if (type == 3)
         {
-            stream.read_leb<uint8_t>();
+            if (stream.read_leb<uint8_t>() != 0)
+                throw InvalidWASMException();
             return Element {
                 .type = type,
                 .functionIndexes = stream.read_vec<uint32_t>(),
                 .mode = ElementMode::Declarative,
+                .valueType = Type::funcref,
             };
         }
         else if (type == 4)
@@ -222,11 +231,14 @@ namespace WasmFile
                 .expr = expr,
                 .referencesExpr = references,
                 .mode = ElementMode::Active,
+                .valueType = Type::funcref,
             };
         }
         else if (type == 5)
         {
-            stream.read_leb<uint8_t>();
+            Type valueType = (Type)stream.read_leb<uint8_t>();
+            if (!is_reference_type(valueType))
+                throw InvalidWASMException();
             std::vector<std::vector<Instruction>> references;
             uint32_t size = stream.read_leb<uint32_t>();
             for (uint32_t i = 0; i < size; i++)
@@ -238,13 +250,16 @@ namespace WasmFile
                 .type = type,
                 .referencesExpr = references,
                 .mode = ElementMode::Passive,
+                .valueType = valueType
             };
         }
         else if (type == 6)
         {
             uint32_t table = stream.read_leb<uint32_t>();
             std::vector<Instruction> expr = parse(stream, s_currentWasmFile);
-            stream.read_leb<uint8_t>();
+            Type valueType = (Type)stream.read_leb<uint8_t>();
+            if (!is_reference_type(valueType))
+                throw InvalidWASMException();
 
             std::vector<std::vector<Instruction>> references;
             uint32_t size = stream.read_leb<uint32_t>();
@@ -260,11 +275,14 @@ namespace WasmFile
                 .expr = expr,
                 .referencesExpr = references,
                 .mode = ElementMode::Active,
+                .valueType = valueType
             };
         }
         else if (type == 7)
         {
-            stream.read_leb<uint8_t>();
+            Type valueType = (Type)stream.read_leb<uint8_t>();
+            if (!is_reference_type(valueType))
+                throw InvalidWASMException();
 
             std::vector<std::vector<Instruction>> references;
             uint32_t size = stream.read_leb<uint32_t>();
@@ -278,6 +296,7 @@ namespace WasmFile
                 .type = type,
                 .referencesExpr = references,
                 .mode = ElementMode::Declarative,
+                .valueType = valueType
             };
         }
         else
@@ -297,9 +316,18 @@ namespace WasmFile
 
     Code Code::read_from_stream(Stream& stream)
     {
-        uint32_t size = stream.read_leb<uint32_t>();
+        // Skip size
+        stream.read_leb<uint32_t>();
 
         std::vector<Local> locals = stream.read_vec<Local>();
+
+        uint64_t count = 0;
+        for (const auto& local : locals)
+            count += local.count;
+
+        if (count > UINT32_MAX)
+            throw InvalidWASMException();
+
         std::vector<Type> localTypes;
         for (const auto& local : locals)
             for (size_t i = 0; i < local.count; i++)
@@ -353,110 +381,106 @@ namespace WasmFile
 
     Ref<WasmFile> WasmFile::read_from_stream(Stream& stream)
     {
-        Ref<WasmFile> wasm = MakeRef<WasmFile>();
-        s_currentWasmFile = wasm;
-
-        uint32_t signature = stream.read_little_endian<uint32_t>();
-        uint32_t version = stream.read_little_endian<uint32_t>();
-
-        if (signature != WASM_SIGNATURE)
+        try
         {
-            fprintf(stderr, "Not a WASM file!\n");
-            throw InvalidWASMException();
-        }
+            Ref<WasmFile> wasm = MakeRef<WasmFile>();
+            s_currentWasmFile = wasm;
 
-        if (version != 1)
-        {
-            fprintf(stderr, "Invalid WASM version!\n");
-            throw InvalidWASMException();
-        }
+            uint32_t signature = stream.read_little_endian<uint32_t>();
+            uint32_t version = stream.read_little_endian<uint32_t>();
 
-        std::vector<Section> foundSections;
-
-        while (!stream.eof())
-        {
-            Section tag = (Section)stream.read_little_endian<uint8_t>();
-            uint32_t size = stream.read_leb<uint32_t>();
-
-            // printf("Section 0x%x: 0x%x bytes\n", tag, size);
-
-            if (vector_contains(foundSections, tag))
-                throw InvalidWASMException();
-            foundSections.push_back(tag);
-
-            std::vector<uint8_t> section(size);
-            stream.read((void*)section.data(), size);
-
-            MemoryStream sectionStream((char*)section.data(), size);
-            if (tag == Section::Custom)
+            if (signature != WASM_SIGNATURE)
             {
-                // Silently ignore...
-                sectionStream.move_to(sectionStream.size());
-            }
-            else if (tag == Section::Type)
-            {
-                wasm->functionTypes = sectionStream.read_vec<FunctionType>();
-            }
-            else if (tag == Section::Import)
-            {
-                wasm->imports = sectionStream.read_vec<Import>();
-            }
-            else if (tag == Section::Function)
-            {
-                wasm->functionTypeIndexes = sectionStream.read_vec<uint32_t>();
-            }
-            else if (tag == Section::Table)
-            {
-                wasm->tables = sectionStream.read_vec<Table>();
-            }
-            else if (tag == Section::Memory)
-            {
-                wasm->memories = sectionStream.read_vec<Memory>();
-            }
-            else if (tag == Section::Global)
-            {
-                wasm->globals = sectionStream.read_vec<Global>();
-            }
-            else if (tag == Section::Export)
-            {
-                wasm->exports = sectionStream.read_vec<Export>();
-            }
-            else if (tag == Section::Start)
-            {
-                wasm->startFunction = sectionStream.read_leb<uint32_t>();
-            }
-            else if (tag == Section::Element)
-            {
-                wasm->elements = sectionStream.read_vec<Element>();
-            }
-            else if (tag == Section::Code)
-            {
-                wasm->codeBlocks = sectionStream.read_vec<Code>();
-            }
-            else if (tag == Section::Data)
-            {
-                wasm->dataBlocks = sectionStream.read_vec<Data>();
-            }
-            else if (tag == Section::DataCount)
-            {
-                // Ignore it...
-                sectionStream.read_leb<uint32_t>();
-            }
-            else
-            {
-                fprintf(stderr, "Warning: Unknown section: %d\n", static_cast<int>(tag));
+                fprintf(stderr, "Not a WASM file!\n");
                 throw InvalidWASMException();
             }
 
-            if (!sectionStream.eof())
+            if (version != 1)
                 throw InvalidWASMException();
+
+            std::vector<Section> foundSections;
+
+            while (!stream.eof())
+            {
+                Section tag = (Section)stream.read_little_endian<uint8_t>();
+                uint32_t size = stream.read_leb<uint32_t>();
+
+                if (vector_contains(foundSections, tag))
+                    throw InvalidWASMException();
+                foundSections.push_back(tag);
+
+                std::vector<uint8_t> section(size);
+                stream.read((void*)section.data(), size);
+
+                MemoryStream sectionStream((char*)section.data(), size);
+                switch (tag)
+                {
+                    case Section::Custom:
+                        sectionStream.move_to(sectionStream.size());
+                        break;
+                    case Section::Type:
+                        wasm->functionTypes = sectionStream.read_vec<FunctionType>();
+                        break;
+                    case Section::Import:
+                        wasm->imports = sectionStream.read_vec<Import>();
+                        break;
+                    case Section::Function:
+                        wasm->functionTypeIndexes = sectionStream.read_vec<uint32_t>();
+                        break;
+                    case Section::Table:
+                        wasm->tables = sectionStream.read_vec<Table>();
+                        break;
+                    case Section::Memory:
+                        wasm->memories = sectionStream.read_vec<Memory>();
+                        break;
+                    case Section::Global:
+                        wasm->globals = sectionStream.read_vec<Global>();
+                        break;
+                    case Section::Export:
+                        wasm->exports = sectionStream.read_vec<Export>();
+                        break;
+                    case Section::Start:
+                        wasm->startFunction = sectionStream.read_leb<uint32_t>();
+                        break;
+                    case Section::Element:
+                        wasm->elements = sectionStream.read_vec<Element>();
+                        break;
+                    case Section::Code:
+                        wasm->codeBlocks = sectionStream.read_vec<Code>();
+                        break;
+                    case Section::Data:
+                        wasm->dataBlocks = sectionStream.read_vec<Data>();
+                        break;
+                    case Section::DataCount: {
+                        wasm->dataCount = sectionStream.read_leb<uint32_t>();
+                        break;
+                    }
+                    default:
+                        fprintf(stderr, "Warning: Unknown section: %d\n", static_cast<int>(tag));
+                        throw InvalidWASMException();
+                }
+
+                if (!sectionStream.eof())
+                    throw InvalidWASMException();
+            }
+
+            if (wasm->functionTypeIndexes.size() != wasm->codeBlocks.size())
+                throw InvalidWASMException();
+
+            if (wasm->dataCount)
+                if (wasm->dataBlocks.size() != wasm->dataCount)
+                    throw InvalidWASMException();
+
+            s_currentWasmFile = nullptr;
+
+            Validator::validate(wasm);
+
+            return wasm;
         }
-
-        if (wasm->functionTypeIndexes.size() != wasm->codeBlocks.size())
+        catch (StreamReadException e)
+        {
             throw InvalidWASMException();
-
-        s_currentWasmFile = nullptr;
-        return wasm;
+        }
     }
 
     Export WasmFile::find_export_by_name(const std::string& name)

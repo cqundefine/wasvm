@@ -10,19 +10,19 @@ WAST2JSON_PATH = "wabt/bin/wast2json"
 SPECTEST_PATH = "spectest.wasm"
 
 ENABLED_PROPOSALS = [
-    # "annotations",
-    # "exception-handling",
-    # "extended-const",
-    # "function-references",
-    # "gc",
-    # "memory64",
-    [ "multi-memory", "--enable-multi-memory" ],
-    # "relaxed-simd",
-    # "tail-call",
-    # "threads",
+    # [ "annotations", "--enable-annotations" ],
+    # [ "exception-handling", "--enable-exceptions" ],
+    # [ "extended-const", "--enable-extended-const" ],
+    # [ "function-references", "--enable-function-references" ],
+    # [ "gc", "--enable-gc" ],
+    # [ "memory64", "--enable-memory64" ],
+    # [ "multi-memory", "--enable-multi-memory" ],
+    # [ "relaxed-simd", "--enable-relaxed-simd" ],
+    # [ "tail-call", "--enable-tail-call" ],
+    # [ "threads", "--enable-threads" ],
 ]
 
-ENABLE_SIMD = True
+ENABLE_SIMD = False
 
 shutil.rmtree(OUTPUT_PATH)
 

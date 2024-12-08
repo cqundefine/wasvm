@@ -4,6 +4,7 @@
 
 struct TestStats
 {
+    bool vm_error;
     uint32_t total;
     uint32_t passed;
     uint32_t failed;

@@ -748,6 +748,8 @@ public:
       m_num_args_range =
           NArgsRange{1, (std::numeric_limits<std::size_t>::max)()};
       break;
+    default:
+      break;
     }
     return *this;
   }
@@ -1318,6 +1320,8 @@ private:
     case '-':
     case '+':
       s.remove_prefix(1);
+      [[fallthrough]];
+    default:
     }
     if (is_digit(lookahead(s))) {
       s = consume_digits(s);

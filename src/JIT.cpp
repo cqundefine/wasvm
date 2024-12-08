@@ -1,5 +1,6 @@
 #include <JIT.h>
-#include <string.h>
+#include <cassert>
+#include <cstring>
 #include <sys/mman.h>
 
 void JIT::mov64(Operand dst, Operand src)
@@ -195,6 +196,7 @@ void JIT::native_call(void* callee)
 void* JIT::build()
 {
     FILE* f = fopen("/home/undefine/Coding/WASVM/jit.bin", "wb");
+    assert(f);
     fwrite(code.data(), code.size(), 1, f);
     fclose(f);
 

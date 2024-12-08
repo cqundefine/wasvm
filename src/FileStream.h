@@ -24,7 +24,9 @@ public:
 
     virtual void read(void* buffer, size_t size) override
     {
-        fread(buffer, size, 1, m_file);
+        size_t count = fread(buffer, size, 1, m_file);
+        if (count == 0)
+            throw StreamReadException();
     }
 
     virtual void move_to(size_t offset) override

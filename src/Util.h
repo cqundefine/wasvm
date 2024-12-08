@@ -1,6 +1,5 @@
 #pragma once
 
-#include <FileStream.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -46,19 +45,7 @@ constexpr Ref<T> StaticRefCast(const Ref<Base>& base)
     return std::static_pointer_cast<T>(base);
 }
 
-inline void fill_buffer_with_random_data(uint8_t* data, size_t size)
-{
-#if LIBC_GLIBC_VERSION(2, 36)
-    arc4random_buf(data, size);
-#elif defined(OS_LINUX)
-    FileStream randomStream("/dev/urandom");
-    randomStream.read(data, size);
-#else
-    srand(time(nullptr));
-    for (size_t i = 0; i < buffer_size; i++)
-        data[i] = rand() % 256;
-#endif
-}
+void fill_buffer_with_random_data(uint8_t* data, size_t size);
 
 template <std::floating_point T>
 T typed_nan()
@@ -78,6 +65,8 @@ bool vector_contains(const std::vector<T>& v, T x)
         return true;
     return false;
 }
+
+bool is_valid_utf8(const char* string);
 
 using float32_t = float;
 using float64_t = double;

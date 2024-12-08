@@ -124,3 +124,8 @@ Value::Type value_type_from_type(Type type)
 
     std::unreachable();
 }
+
+bool is_reference_type(Type type)
+{
+    return type == Type::externref || type == Type::funcref;
+}

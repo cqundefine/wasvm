@@ -38,6 +38,7 @@ int main(int argc, char** argv)
         TestStats stats = run_tests(parser.get("path").c_str());
 
         nlohmann::json j;
+        j["vm_error"] = stats.vm_error;
         j["total"] = stats.total;
         j["passed"] = stats.passed;
         j["failed"] = stats.failed;

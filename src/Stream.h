@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Util.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -17,6 +18,14 @@ concept IsUnsignedIntegral = std::is_integral_v<T> && std::is_unsigned_v<T>;
 
 template <typename T>
 concept IsSignedIntegral = std::is_integral_v<T> && std::is_signed_v<T>;
+
+struct StreamReadException : public std::exception
+{
+    const char* what() const throw()
+    {
+        return "StreamReadException";
+    }
+};
 
 class Stream
 {
@@ -129,7 +138,11 @@ public:
         char* arr = (char*)malloc(size + 1);
         read((void*)arr, size);
         arr[size] = 0;
-        return std::string(arr, size);
+        if (!is_valid_utf8(arr))
+            throw StreamReadException();
+        std::string newString = std::string(arr, size);
+        free(arr);
+        return newString;
     }
 
     template <typename T>

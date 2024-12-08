@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <vector>
 
+// clang-format off
 #define ENUMERATE_WASI_CALL(x)                             \
     x(args_get, uint32_t, uint32_t)                        \
     x(args_sizes_get, uint32_t, uint32_t)                  \
@@ -19,6 +20,7 @@
     x(poll_oneoff, uint32_t, uint32_t, uint32_t, uint32_t) \
     x(proc_exit, uint32_t)                                 \
     x(random_get, uint32_t, uint32_t)
+// clang-format on
 
 namespace WASI
 {

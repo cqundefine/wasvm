@@ -44,6 +44,7 @@ public:
             Operand operand;
             operand.type = Type::Register;
             operand.reg = reg;
+            operand.immediate = -1;
             return operand;
         }
 
@@ -51,6 +52,7 @@ public:
         {
             Operand operand;
             operand.type = Type::Immediate;
+            operand.reg = {};
             operand.immediate = immediate;
             return operand;
         }

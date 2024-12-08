@@ -167,7 +167,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 break;
             case Opcode::ref_null: {
                 Type type = (Type)stream.read_little_endian<uint8_t>();
-                if (type != Type::funcref && type != Type::externref)
+                if (!is_reference_type(type))
                     throw WasmFile::InvalidWASMException();
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = type });
                 break;
