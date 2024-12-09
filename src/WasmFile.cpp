@@ -15,16 +15,14 @@ namespace WasmFile
         uint8_t type = stream.read_little_endian<uint8_t>();
 
         uint32_t min = stream.read_leb<uint32_t>();
-        uint32_t max;
+        std::optional<uint32_t> max;
 
-        if (type == 0x00)
-            max = UINT32_MAX;
-        else if (type == 0x01)
+        if (type == 0x01)
             max = stream.read_leb<uint32_t>();
-        else
+        else if (type != 0x00)
             throw InvalidWASMException();
 
-        if (min > max)
+        if (max && min > max)
             throw InvalidWASMException();
 
         return Limits {
@@ -166,144 +164,60 @@ namespace WasmFile
     {
         uint32_t type = stream.read_leb<uint32_t>();
 
-        // FIXME: The type is a bitfield
-        if (type == 0)
-        {
-            return Element {
-                .type = type,
-                .table = 0,
-                .expr = parse(stream, s_currentWasmFile),
-                .functionIndexes = stream.read_vec<uint32_t>(),
-                .mode = ElementMode::Active,
-                .valueType = Type::funcref,
-            };
-        }
-        else if (type == 1)
-        {
-            if (stream.read_leb<uint8_t>() != 0)
-                throw InvalidWASMException();
-            return Element {
-                .type = type,
-                .functionIndexes = stream.read_vec<uint32_t>(),
-                .mode = ElementMode::Passive,
-                .valueType = Type::funcref,
-            };
-        }
-        else if (type == 2)
-        {
-            uint32_t table = stream.read_leb<uint32_t>();
-            std::vector<Instruction> expr = parse(stream, s_currentWasmFile);
-            if (stream.read_leb<uint8_t>() != 0)
-                throw InvalidWASMException();
-            return {
-                .type = type,
-                .table = table,
-                .expr = expr,
-                .functionIndexes = stream.read_vec<uint32_t>(),
-                .mode = ElementMode::Active,
-                .valueType = Type::funcref,
-            };
-        }
-        else if (type == 3)
-        {
-            if (stream.read_leb<uint8_t>() != 0)
-                throw InvalidWASMException();
-            return Element {
-                .type = type,
-                .functionIndexes = stream.read_vec<uint32_t>(),
-                .mode = ElementMode::Declarative,
-                .valueType = Type::funcref,
-            };
-        }
-        else if (type == 4)
-        {
-            std::vector<Instruction> expr = parse(stream, s_currentWasmFile);
-            std::vector<std::vector<Instruction>> references;
-            uint32_t size = stream.read_leb<uint32_t>();
-            for (uint32_t i = 0; i < size; i++)
-            {
-                std::vector<Instruction> index = parse(stream, s_currentWasmFile);
-                references.push_back(index);
-            }
-            return Element {
-                .type = type,
-                .table = 0,
-                .expr = expr,
-                .referencesExpr = references,
-                .mode = ElementMode::Active,
-                .valueType = Type::funcref,
-            };
-        }
-        else if (type == 5)
-        {
-            Type valueType = (Type)stream.read_leb<uint8_t>();
-            if (!is_reference_type(valueType))
-                throw InvalidWASMException();
-            std::vector<std::vector<Instruction>> references;
-            uint32_t size = stream.read_leb<uint32_t>();
-            for (uint32_t i = 0; i < size; i++)
-            {
-                std::vector<Instruction> index = parse(stream, s_currentWasmFile);
-                references.push_back(index);
-            }
-            return Element {
-                .type = type,
-                .referencesExpr = references,
-                .mode = ElementMode::Passive,
-                .valueType = valueType
-            };
-        }
-        else if (type == 6)
-        {
-            uint32_t table = stream.read_leb<uint32_t>();
-            std::vector<Instruction> expr = parse(stream, s_currentWasmFile);
-            Type valueType = (Type)stream.read_leb<uint8_t>();
-            if (!is_reference_type(valueType))
-                throw InvalidWASMException();
+        if (type > 0x07)
+            throw InvalidWASMException();
 
-            std::vector<std::vector<Instruction>> references;
-            uint32_t size = stream.read_leb<uint32_t>();
-            for (uint32_t i = 0; i < size; i++)
-            {
-                std::vector<Instruction> index = parse(stream, s_currentWasmFile);
-                references.push_back(index);
-            }
+        bool is_passive_or_declarative = type & 0b1;
+        bool has_table_index = type & 0b10;
+        bool has_element_expressions = type & 0b100;
 
-            return Element {
-                .type = type,
-                .table = table,
-                .expr = expr,
-                .referencesExpr = references,
-                .mode = ElementMode::Active,
-                .valueType = valueType
-            };
-        }
-        else if (type == 7)
+        Element element {};
+
+        if (is_passive_or_declarative)
         {
-            Type valueType = (Type)stream.read_leb<uint8_t>();
-            if (!is_reference_type(valueType))
-                throw InvalidWASMException();
-
-            std::vector<std::vector<Instruction>> references;
-            uint32_t size = stream.read_leb<uint32_t>();
-            for (uint32_t i = 0; i < size; i++)
-            {
-                std::vector<Instruction> index = parse(stream, s_currentWasmFile);
-                references.push_back(index);
-            }
-
-            return Element {
-                .type = type,
-                .referencesExpr = references,
-                .mode = ElementMode::Declarative,
-                .valueType = valueType
-            };
+            if (has_table_index)
+                element.mode = ElementMode::Declarative;
+            else
+                element.mode = ElementMode::Passive;
         }
         else
         {
-            fprintf(stderr, "Error: Unknown element type: %d\n", type);
-            throw InvalidWASMException();
+            element.mode = ElementMode::Active;
+            element.table = has_table_index ? stream.read_leb<uint32_t>() : 0;
+            element.expr = parse(stream, s_currentWasmFile);
         }
+
+        element.valueType = Type::funcref;
+        if (is_passive_or_declarative || has_table_index)
+        {
+            if (has_element_expressions)
+            {
+                element.valueType = (Type)stream.read_leb<uint8_t>();
+                if (!is_reference_type(element.valueType))
+                    throw InvalidWASMException();
+            }
+            else
+            {
+                if (stream.read_leb<uint8_t>() != 0)
+                    throw InvalidWASMException();
+            }
+        }
+
+        if (has_element_expressions)
+        {
+            uint32_t size = stream.read_leb<uint32_t>();
+            for (uint32_t i = 0; i < size; i++)
+            {
+                std::vector<Instruction> index = parse(stream, s_currentWasmFile);
+                element.referencesExpr.push_back(index);
+            }
+        }
+        else
+        {
+            element.functionIndexes = stream.read_vec<uint32_t>();
+        }
+
+        return element;
     }
 
     Local Local::read_from_stream(Stream& stream)
@@ -473,7 +387,7 @@ namespace WasmFile
 
             s_currentWasmFile = nullptr;
 
-            Validator::validate(wasm);
+            Validator validator = Validator(wasm);
 
             return wasm;
         }

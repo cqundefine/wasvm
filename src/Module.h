@@ -17,7 +17,7 @@ struct Memory
 {
     uint8_t* data;
     uint32_t size;
-    uint32_t max;
+    std::optional<uint32_t> max;
 
     Memory(const WasmFile::Memory& memory);
 };
@@ -25,7 +25,7 @@ struct Memory
 struct Table
 {
     std::vector<Reference> elements;
-    uint32_t max;
+    std::optional<uint32_t> max;
 };
 
 struct Global

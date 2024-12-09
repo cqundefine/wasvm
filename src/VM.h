@@ -46,7 +46,7 @@ public:
     static Frame* frame() { return m_frame; }
 
 private:
-    static Value run_bare_code_returning(Ref<Module> mod, std::vector<Instruction> instructions, Type returnType);
+    static Value run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction>& instructions, Type returnType);
 
     static void clean_up_frame();
 

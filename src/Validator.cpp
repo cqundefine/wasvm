@@ -10,68 +10,124 @@ struct ValidatorLabel
     bool unreachable;
 };
 
-void Validator::validate(Ref<WasmFile::WasmFile> wasmFile)
-{
-    for (size_t i = 0; i < wasmFile->functionTypeIndexes.size(); i++)
-    {
-        // if (i == 49)
-        //     asm volatile("int3");
-        validate_function(wasmFile, wasmFile->functionTypes[wasmFile->functionTypeIndexes[i]], wasmFile->codeBlocks[i]);
-    }
-}
+#define VALIDATION_ASSERT(x) if (!(x)) throw WasmFile::InvalidWASMException();
 
-void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFile::FunctionType& type, const WasmFile::Code& code)
+Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
+    : m_wasmFile(wasmFile)
 {
-    // FIXME: Calculate it once for the whole validation
-    std::vector<uint32_t> functionTypeIndexes;
-    std::vector<std::pair<Type, WasmFile::GlobalMutability>> globals;
-    uint32_t memoryCount = 0;
-    std::vector<Type> tables;
-
     for (const auto& import : wasmFile->imports)
     {
         switch (import.type)
         {
             case WasmFile::ImportType::Function:
-                functionTypeIndexes.push_back(import.functionTypeIndex);
+                VALIDATION_ASSERT(import.functionTypeIndex < wasmFile->functionTypes.size());
+                m_functions.push_back(import.functionTypeIndex);
                 break;
             case WasmFile::ImportType::Global:
-                globals.push_back({ import.globalType, import.globalMut });
+                m_imported_global_count++;
+                m_globals.push_back({ import.globalType, import.globalMut });
                 break;
             case WasmFile::ImportType::Memory:
-                memoryCount++;
+                m_memories++;
                 break;
             case WasmFile::ImportType::Table:
-                tables.push_back(import.tableRefType);
+                m_tables.push_back(import.tableRefType);
                 break;
             default:
-                assert(false);
+                VALIDATION_ASSERT(false);
         }
     }
 
     for (const auto index : wasmFile->functionTypeIndexes)
-        functionTypeIndexes.push_back(index);
+    {
+        VALIDATION_ASSERT(index < wasmFile->functionTypes.size());
+        m_functions.push_back(index);
+    }
 
     for (const auto& global : wasmFile->globals)
-        globals.push_back({ global.type, global.mut });
+    {
+        validate_constant_expression(global.initCode, global.type, true);
+        m_globals.push_back({ global.type, global.mut });
+    }
 
-    memoryCount += wasmFile->memories.size();
+    for (const auto& memory : wasmFile->memories)
+    {
+        VALIDATION_ASSERT(memory.limits.min <= WasmFile::MAX_WASM_PAGES);
+        if (memory.limits.max)
+            VALIDATION_ASSERT(memory.limits.max <= WasmFile::MAX_WASM_PAGES);
+        m_memories++;
+    }
 
     for (const auto& table : wasmFile->tables)
-        tables.push_back(table.refType);
+        m_tables.push_back(table.refType);
 
-    std::vector<ValidatorLabel> labels;
-    auto expect_labels = [&labels](uint32_t count, bool consume) {
-        if (count > labels.size())
-            throw WasmFile::InvalidWASMException();
+    std::vector<std::string> usedVectorNames;
 
-        if (consume)
+    for (const auto& exp : wasmFile->exports)
+    {
+        VALIDATION_ASSERT(!vector_contains(usedVectorNames, exp.name));
+        usedVectorNames.push_back(exp.name);
+
+        switch(exp.type)
         {
-            for (uint32_t i = 0; i < count; i++)
-                labels.pop_back();
+            case WasmFile::ImportType::Function:
+                VALIDATION_ASSERT(exp.index < m_functions.size());
+                break;
+            case WasmFile::ImportType::Global:
+                VALIDATION_ASSERT(exp.index < m_globals.size());
+                break;
+            case WasmFile::ImportType::Memory:
+                VALIDATION_ASSERT(exp.index < m_memories);
+                break;
+            case WasmFile::ImportType::Table:
+                VALIDATION_ASSERT(exp.index < m_tables.size());
+                break;
+            default:
+                VALIDATION_ASSERT(false); 
         }
-    };
+    }
 
+    // FIXME: Allow multi-memory
+    VALIDATION_ASSERT(m_memories <= 1);
+
+    for (const auto& element : wasmFile->elements)
+    {
+        VALIDATION_ASSERT(element.table < m_tables.size());
+        for (const auto& expression : element.referencesExpr)
+            validate_constant_expression(expression, element.valueType, true);
+        if (element.expr.size() > 0)
+            validate_constant_expression(element.expr, Type::i32, true);
+    }
+
+    for (const auto& data : wasmFile->dataBlocks)
+    {
+        if (data.mode == WasmFile::ElementMode::Active)
+        {
+            VALIDATION_ASSERT(data.memoryIndex < m_memories);
+            validate_constant_expression(data.expr, Type::i32, true);
+        }
+    }
+
+    for (size_t i = 0; i < wasmFile->functionTypeIndexes.size(); i++)
+    {
+        // if (i == 44)
+        //     asm volatile("int3");
+        validate_function(wasmFile->functionTypes[wasmFile->functionTypeIndexes[i]], wasmFile->codeBlocks[i]);
+    }
+
+    if (wasmFile->startFunction)
+    {
+        VALIDATION_ASSERT(*wasmFile->startFunction < m_functions.size());
+
+        const auto& type = wasmFile->functionTypes[m_functions[*wasmFile->startFunction]];
+        VALIDATION_ASSERT(type.params.size() == 0);
+        VALIDATION_ASSERT(type.returns.size() == 0);
+    }
+}
+
+void Validator::validate_function(const WasmFile::FunctionType& type, const WasmFile::Code& code)
+{
+    std::vector<ValidatorLabel> labels;
     labels.push_back(ValidatorLabel {
         .stackHeight = 0,
         .returnTypes = type.returns,
@@ -85,11 +141,8 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
         if (labels[labels.size() - 1].unreachable)
             return;
 
-        if (stack.size() == (labels.size() == 0 ? 0 : labels[labels.size() - 1].stackHeight))
-            throw WasmFile::InvalidWASMException();
-
-        if (stack.back() != expected)
-            throw WasmFile::InvalidWASMException();
+        VALIDATION_ASSERT(stack.size() > labels[labels.size() - 1].stackHeight);
+        VALIDATION_ASSERT(stack.back() == expected);
         stack.pop_back();
     };
 
@@ -123,24 +176,21 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
         stack.push_back(Type::i32);
     };
 
-    auto validate_load_operation = [expect, &stack, memoryCount](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
-        if (memArg.memoryIndex >= memoryCount)
-            throw WasmFile::InvalidWASMException();
-        if ((1ull << memArg.align) > bitWidth / 8)
-            throw WasmFile::InvalidWASMException();
+    auto validate_load_operation = [expect, &stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
+        VALIDATION_ASSERT(memArg.memoryIndex < m_memories);
+        VALIDATION_ASSERT((1ull << memArg.align) <= bitWidth / 8);
         expect(Type::i32);
         stack.push_back(type);
     };
 
-    auto validate_store_operation = [expect, &stack, memoryCount](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
-        if (memArg.memoryIndex >= memoryCount)
-            throw WasmFile::InvalidWASMException();
-        if ((1ull << memArg.align) > bitWidth / 8)
-            throw WasmFile::InvalidWASMException();
+    auto validate_store_operation = [expect, &stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
+        VALIDATION_ASSERT(memArg.memoryIndex < m_memories);
+        VALIDATION_ASSERT((1ull << memArg.align) <= bitWidth / 8);
         expect(type);
         expect(Type::i32);
     };
 
+    // FIXME: All the comparisions of stack size being > 0 are incorrect
     for (const auto& instruction : code.instructions)
     {
         switch (instruction.opcode)
@@ -153,14 +203,13 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
             case Opcode::block:
             case Opcode::loop: {
                 const BlockLoopArguments& arguments = std::get<BlockLoopArguments>(instruction.arguments);
-                const auto& params = arguments.blockType.get_param_types(wasmFile);
+                const auto& params = arguments.blockType.get_param_types(m_wasmFile);
 
                 // FIXME: This is kinda ugly
                 std::vector<Type> types;
                 for (auto type = params.rbegin(); type != params.rend(); type++)
                 {
-                    if (stack.size() == 0)
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(stack.size() > 0);
                     Type popped = stack.back();
                     expect(*type);
                     types.push_back(popped);
@@ -171,14 +220,14 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
 
                 labels.push_back(ValidatorLabel {
                     .stackHeight = static_cast<uint32_t>(stack.size() - params.size()),
-                    .returnTypes = arguments.blockType.get_return_types(wasmFile),
+                    .returnTypes = arguments.blockType.get_return_types(m_wasmFile),
                     .paramTypes = params,
                     .unreachable = false });
                 break;
             }
             case Opcode::if_: {
                 const IfArguments& arguments = std::get<IfArguments>(instruction.arguments);
-                const auto& params = arguments.blockType.get_param_types(wasmFile);
+                const auto& params = arguments.blockType.get_param_types(m_wasmFile);
 
                 expect(Type::i32);
 
@@ -186,8 +235,7 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
                 std::vector<Type> types;
                 for (auto type = params.rbegin(); type != params.rend(); type++)
                 {
-                    if (stack.size() == 0)
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(stack.size() > 0);
                     Type popped = stack.back();
                     expect(*type);
                     types.push_back(popped);
@@ -198,7 +246,7 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
 
                 labels.push_back(ValidatorLabel {
                     .stackHeight = static_cast<uint32_t>(stack.size() - params.size()),
-                    .returnTypes = arguments.blockType.get_return_types(wasmFile),
+                    .returnTypes = arguments.blockType.get_return_types(m_wasmFile),
                     .paramTypes = params,
                     .unreachable = false });
                 break;
@@ -210,16 +258,13 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
                     // FIXME: This is kinda ugly
                     for (auto type = label.returnTypes.rbegin(); type != label.returnTypes.rend(); type++)
                     {
-                        if (stack.size() == 0)
-                            throw WasmFile::InvalidWASMException();
+                        VALIDATION_ASSERT(stack.size() > 0)
                         Type popped = stack.back();
-                        if (popped != *type)
-                            throw WasmFile::InvalidWASMException();
+                        VALIDATION_ASSERT(popped == *type);
                         stack.pop_back();
                     }
 
-                    if (stack.size() != label.stackHeight)
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(stack.size() == label.stackHeight);
                 }
                 else
                 {
@@ -231,27 +276,23 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
                 break;
             }
             case Opcode::end: {
-                if (labels.size() == 0)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(labels.size() > 0)
 
                 auto& label = labels[labels.size() - 1];
                 if (!label.unreachable)
                 {
-                    // FIXME: This is kinda ugly
+                    // FIXME: This is kinda ugly and a duplicate
                     std::vector<Type> types;
                     for (auto type = label.returnTypes.rbegin(); type != label.returnTypes.rend(); type++)
                     {
-                        if (stack.size() == 0)
-                            throw WasmFile::InvalidWASMException();
+                        VALIDATION_ASSERT(stack.size() > 0);
                         Type popped = stack.back();
-                        if (popped != *type)
-                            throw WasmFile::InvalidWASMException();
+                        VALIDATION_ASSERT(popped == *type);
                         stack.pop_back();
                         types.push_back(popped);
                     }
 
-                    if (stack.size() != label.stackHeight)
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(stack.size() == label.stackHeight);
 
                     std::reverse(types.begin(), types.end());
                     for (const auto type : types)
@@ -266,29 +307,40 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
                 labels.pop_back();
                 break;
             }
-            case Opcode::br:
-                expect_labels(std::get<uint32_t>(instruction.arguments) + 1, false);
+            case Opcode::br: {
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) + 1 <= labels.size());
+                const auto& label = labels[labels.size() - std::get<uint32_t>(instruction.arguments) - 1];
+                for (auto type = label.returnTypes.rbegin(); type != label.returnTypes.rend(); type++)
+                    expect(*type);
                 labels[labels.size() - 1].unreachable = true;
                 break;
-            case Opcode::br_if:
+            }
+            case Opcode::br_if: {
                 expect(Type::i32);
-                expect_labels(std::get<uint32_t>(instruction.arguments) + 1, false);
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) + 1 <= labels.size());
+                const auto& label = labels[labels.size() - std::get<uint32_t>(instruction.arguments) - 1];
+                VALIDATION_ASSERT(stack.size() >= label.returnTypes.size())
+                for (size_t i = 0; i < label.returnTypes.size(); i++)
+                    VALIDATION_ASSERT(stack[stack.size() - i - 1] == label.returnTypes[label.returnTypes.size() - i - 1]);
                 break;
-            case Opcode::br_table:
+            }
+            case Opcode::br_table: {
+                const auto& arguments = std::get<BranchTableArguments>(instruction.arguments);
                 expect(Type::i32);
                 labels[labels.size() - 1].unreachable = true;
-                // FIXME: Validate this
-                printf("Warning: Validation for br_table not implemented\n");
+                VALIDATION_ASSERT(arguments.defaultLabel <= labels.size());
+                for (const auto& label : arguments.labels)
+                    VALIDATION_ASSERT(label <= labels.size());
                 break;
+            }
             case Opcode::return_:
                 for (auto t = type.returns.rbegin(); t != type.returns.rend(); t++)
                     expect(*t);
                 labels[labels.size() - 1].unreachable = true;
                 break;
             case Opcode::call: {
-                if (std::get<uint32_t>(instruction.arguments) >= functionTypeIndexes.size())
-                    throw WasmFile::InvalidWASMException();
-                const auto& calleeType = wasmFile->functionTypes[functionTypeIndexes[std::get<uint32_t>(instruction.arguments)]];
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
+                const auto& calleeType = m_wasmFile->functionTypes[m_functions[std::get<uint32_t>(instruction.arguments)]];
                 for (auto type = calleeType.params.rbegin(); type != calleeType.params.rend(); type++)
                     expect(*type);
 
@@ -301,13 +353,11 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
 
                 expect(Type::i32);
 
-                if (arguments.tableIndex >= tables.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(arguments.tableIndex < m_tables.size());
+                VALIDATION_ASSERT(arguments.typeIndex < m_wasmFile->functionTypes.size());
+                VALIDATION_ASSERT(m_tables[arguments.tableIndex] == Type::funcref);
 
-                if (arguments.typeIndex >= wasmFile->functionTypes.size())
-                    throw WasmFile::InvalidWASMException();
-
-                const auto& calleeType = wasmFile->functionTypes[arguments.typeIndex];
+                const auto& calleeType = m_wasmFile->functionTypes[arguments.typeIndex];
                 for (auto type = calleeType.params.rbegin(); type != calleeType.params.rend(); type++)
                     expect(*type);
 
@@ -316,74 +366,81 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
                 break;
             }
             case Opcode::drop:
-                if (stack.size() == 0)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(stack.size() > 0)
                 stack.pop_back();
                 break;
-            case Opcode::select_typed:
-                // FIXME: Validate types
-                printf("Warning: Validation for select_typed not implemented\n");
-                [[fallthrough]];
             case Opcode::select_: {
                 // FIXME: This is a mess
                 if (!labels[labels.size() - 1].unreachable)
                 {
                     expect(Type::i32);
-                    if (stack.size() < 2)
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(stack.size() >= 2);
                     Type a = stack.back();
                     stack.pop_back();
                     Type b = stack.back();
                     stack.pop_back();
                     stack.push_back(a);
-                    if (a != b)
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(a == b);
+                    VALIDATION_ASSERT(a == Type::i32 || a == Type::i64 || a == Type::f32 || a == Type::f64 || a == Type::v128);
+                }
+                break;
+            }
+            case Opcode::select_typed: {
+                // FIXME: This is duplicated with select and also a mess
+                if (!labels[labels.size() - 1].unreachable)
+                {
+                    const auto& arguments = std::get<std::vector<uint8_t>>(instruction.arguments);
+                    VALIDATION_ASSERT(arguments.size() == 1);
+                    VALIDATION_ASSERT(is_valid_type((Type)arguments[0]));
+                    expect(Type::i32);
+                    VALIDATION_ASSERT(stack.size() >= 2);
+                    Type a = stack.back();
+                    stack.pop_back();
+                    Type b = stack.back();
+                    stack.pop_back();
+                    stack.push_back(a);
+                    printf("%d %d %d\n", (uint8_t)a, (uint8_t)b, arguments[0]);
+                    fflush(stdout);
+                    VALIDATION_ASSERT(a == (Type)arguments[0]);
+                    VALIDATION_ASSERT(b == (Type)arguments[0]);
                 }
                 break;
             }
             case Opcode::local_get:
-                if (std::get<uint32_t>(instruction.arguments) >= locals.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < locals.size());
                 stack.push_back(locals[std::get<uint32_t>(instruction.arguments)]);
                 break;
             case Opcode::local_set:
-                if (std::get<uint32_t>(instruction.arguments) >= locals.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < locals.size());
                 expect(locals[std::get<uint32_t>(instruction.arguments)]);
                 break;
             case Opcode::local_tee:
-                if (std::get<uint32_t>(instruction.arguments) >= locals.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < locals.size());
                 expect(locals[std::get<uint32_t>(instruction.arguments)]);
                 stack.push_back(locals[std::get<uint32_t>(instruction.arguments)]);
                 break;
             case Opcode::global_get: {
-                if (std::get<uint32_t>(instruction.arguments) >= globals.size())
-                    throw WasmFile::InvalidWASMException();
-                const auto& global = globals[std::get<uint32_t>(instruction.arguments)];
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_globals.size());
+                const auto& global = m_globals[std::get<uint32_t>(instruction.arguments)];
                 stack.push_back(global.first);
                 break;
             }
             case Opcode::global_set: {
-                if (std::get<uint32_t>(instruction.arguments) >= globals.size())
-                    throw WasmFile::InvalidWASMException();
-                const auto& global = globals[std::get<uint32_t>(instruction.arguments)];
-                if (global.second != WasmFile::GlobalMutability::Variable)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_globals.size());
+                const auto& global = m_globals[std::get<uint32_t>(instruction.arguments)];
+                VALIDATION_ASSERT(global.second == WasmFile::GlobalMutability::Variable);
                 expect(global.first);
                 break;
             }
             case Opcode::table_get: {
-                if (std::get<uint32_t>(instruction.arguments) >= tables.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
                 expect(Type::i32);
-                stack.push_back(tables[std::get<uint32_t>(instruction.arguments)]);
+                stack.push_back(m_tables[std::get<uint32_t>(instruction.arguments)]);
                 break;
             }
             case Opcode::table_set: {
-                if (std::get<uint32_t>(instruction.arguments) >= tables.size())
-                    throw WasmFile::InvalidWASMException();
-                expect(tables[std::get<uint32_t>(instruction.arguments)]);
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
+                expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
                 expect(Type::i32);
                 break;
             }
@@ -447,13 +504,11 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
                 validate_store_operation(Type::i64, 32, std::get<WasmFile::MemArg>(instruction.arguments));
                 break;
             case Opcode::memory_size:
-                if (std::get<uint32_t>(instruction.arguments) >= memoryCount)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_memories);
                 stack.push_back(Type::i32);
                 break;
             case Opcode::memory_grow:
-                if (std::get<uint32_t>(instruction.arguments) >= memoryCount)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_memories);
                 expect(Type::i32);
                 stack.push_back(Type::i32);
                 break;
@@ -679,19 +734,16 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
             case Opcode::ref_is_null: {
                 if (!labels[labels.size() - 1].unreachable)
                 {
-                    if (stack.size() == 0)
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(stack.size() > 0);
                     Type a = stack.back();
                     stack.pop_back();
-                    if (!is_reference_type(a))
-                        throw WasmFile::InvalidWASMException();
+                    VALIDATION_ASSERT(is_reference_type(a));
                 }
                 stack.push_back(Type::i32);
                 break;
             }
             case Opcode::ref_func:
-                // FIXME: Verify that the ref is valid
-                printf("Warning: Validation for ref_func not implemented\n");
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
                 stack.push_back(Type::funcref);
                 break;
             case Opcode::i32_trunc_sat_f32_s:
@@ -715,94 +767,128 @@ void Validator::validate_function(Ref<WasmFile::WasmFile> wasmFile, const WasmFi
                 stack.push_back(Type::i64);
                 break;
             case Opcode::memory_init: {
-                if (!wasmFile->dataCount)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(m_wasmFile->dataCount);
                 const auto& arguments = std::get<MemoryInitArguments>(instruction.arguments);
-                if (arguments.memoryIndex >= memoryCount)
-                    throw WasmFile::InvalidWASMException();
-                if (arguments.dataIndex >= wasmFile->dataBlocks.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(arguments.memoryIndex < m_memories);
+                VALIDATION_ASSERT(arguments.dataIndex < m_wasmFile->dataBlocks.size());
                 expect(Type::i32);
                 expect(Type::i32);
                 expect(Type::i32);
                 break;
             }
             case Opcode::data_drop:
-                if (!wasmFile->dataCount)
-                    throw WasmFile::InvalidWASMException();
-                if (std::get<uint32_t>(instruction.arguments) >= wasmFile->dataBlocks.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(m_wasmFile->dataCount);
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_wasmFile->dataBlocks.size());
                 break;
             case Opcode::memory_copy: {
                 const auto& arguments = std::get<MemoryCopyArguments>(instruction.arguments);
-                if (arguments.destination >= memoryCount)
-                    throw WasmFile::InvalidWASMException();
-                if (arguments.source >= memoryCount)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(arguments.destination < m_memories);
+                VALIDATION_ASSERT(arguments.source < m_memories);
                 expect(Type::i32);
                 expect(Type::i32);
                 expect(Type::i32);
                 break;
             }
             case Opcode::memory_fill:
-                if (std::get<uint32_t>(instruction.arguments) >= memoryCount)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_memories);
                 expect(Type::i32);
                 expect(Type::i32);
                 expect(Type::i32);
                 break;
             case Opcode::table_init: {
                 const auto& arguments = std::get<TableInitArguments>(instruction.arguments);
-                if (arguments.tableIndex >= tables.size())
-                    throw WasmFile::InvalidWASMException();
-                if (arguments.elementIndex >= wasmFile->elements.size())
-                    throw WasmFile::InvalidWASMException();
-                if (tables[arguments.tableIndex] != wasmFile->elements[arguments.elementIndex].valueType)
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(arguments.tableIndex < m_tables.size());
+                VALIDATION_ASSERT(arguments.elementIndex < m_wasmFile->elements.size());
+                VALIDATION_ASSERT(m_tables[arguments.tableIndex] == m_wasmFile->elements[arguments.elementIndex].valueType);
                 expect(Type::i32);
                 expect(Type::i32);
                 expect(Type::i32);
                 break;
             }
             case Opcode::elem_drop:
-                if (std::get<uint32_t>(instruction.arguments) >= wasmFile->elements.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_wasmFile->elements.size());
                 break;
             case Opcode::table_copy: {
                 const auto& arguments = std::get<TableCopyArguments>(instruction.arguments);
-                if (arguments.destination >= tables.size())
-                    throw WasmFile::InvalidWASMException();
-                if (arguments.source >= tables.size())
-                    throw WasmFile::InvalidWASMException();
-                if (tables[arguments.destination] != tables[arguments.source])
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(arguments.destination < m_tables.size());
+                VALIDATION_ASSERT(arguments.source < m_tables.size());
+                VALIDATION_ASSERT(m_tables[arguments.destination] == m_tables[arguments.source]);
                 expect(Type::i32);
                 expect(Type::i32);
                 expect(Type::i32);
                 break;
             }
             case Opcode::table_grow:
-                if (std::get<uint32_t>(instruction.arguments) >= tables.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
                 expect(Type::i32);
-                expect(tables[std::get<uint32_t>(instruction.arguments)]);
+                expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
                 stack.push_back(Type::i32);
                 break;
             case Opcode::table_size:
-                if (std::get<uint32_t>(instruction.arguments) >= tables.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
                 stack.push_back(Type::i32);
                 break;
             case Opcode::table_fill:
-                if (std::get<uint32_t>(instruction.arguments) >= tables.size())
-                    throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
                 expect(Type::i32);
-                expect(tables[std::get<uint32_t>(instruction.arguments)]);
+                expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
                 expect(Type::i32);
                 break;
             default:
                 fprintf(stderr, "Error: No validation for opcode 0x%x\n", static_cast<uint32_t>(instruction.opcode));
-                throw WasmFile::InvalidWASMException();
+                VALIDATION_ASSERT(false);
         }
     }
+}
+
+void Validator::validate_constant_expression(const std::vector<Instruction>& instructions, Type expectedReturnType, bool globalRestrictions)
+{
+    std::vector<Type> stack;
+
+    for (size_t ip = 0; ip < instructions.size(); ip++)
+    {
+        const auto& instruction = instructions[ip];
+        switch (instruction.opcode)
+        {
+            case Opcode::end:
+                VALIDATION_ASSERT(ip == instructions.size() - 1);
+                break;
+            case Opcode::global_get: {
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_globals.size());
+                if (globalRestrictions)
+                    VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_imported_global_count);
+                const auto& global = m_globals[std::get<uint32_t>(instruction.arguments)];
+                VALIDATION_ASSERT(global.second == WasmFile::GlobalMutability::Constant);
+                stack.push_back(global.first);
+                break;
+            }
+            case Opcode::i32_const:
+                stack.push_back(Type::i32);
+                break;
+            case Opcode::i64_const:
+                stack.push_back(Type::i64);
+                break;
+            case Opcode::f32_const:
+                stack.push_back(Type::f32);
+                break;
+            case Opcode::f64_const:
+                stack.push_back(Type::f64);
+                break;
+            case Opcode::ref_null:
+                stack.push_back(std::get<Type>(instruction.arguments));
+                break;
+            case Opcode::ref_func:
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
+                stack.push_back(Type::funcref);
+                break;
+            case Opcode::v128_const:
+                stack.push_back(Type::v128);
+                break;
+            default:
+                VALIDATION_ASSERT(false);
+        }
+    }
+
+    VALIDATION_ASSERT(stack.size() == 1);
+    VALIDATION_ASSERT(stack.back() == expectedReturnType);
 }

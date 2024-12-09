@@ -13,6 +13,7 @@ struct Instruction;
 namespace WasmFile
 {
     constexpr uint32_t WASM_SIGNATURE = 0x6d736100;
+    constexpr uint32_t MAX_WASM_PAGES = 65536;
 
     enum class Section
     {
@@ -42,7 +43,7 @@ namespace WasmFile
     struct Limits
     {
         uint32_t min;
-        uint32_t max;
+        std::optional<uint32_t> max;
 
         static Limits read_from_stream(Stream& stream);
     };
@@ -145,7 +146,6 @@ namespace WasmFile
 
     struct Element
     {
-        uint32_t type;
         uint32_t table;
         std::vector<Instruction> expr;
         std::vector<uint32_t> functionIndexes;
@@ -192,7 +192,7 @@ namespace WasmFile
         std::vector<Memory> memories;
         std::vector<Global> globals;
         std::vector<Export> exports;
-        uint32_t startFunction = UINT32_MAX;
+        std::optional<uint32_t> startFunction;
         std::vector<Element> elements;
         std::vector<Code> codeBlocks;
         std::vector<Data> dataBlocks;

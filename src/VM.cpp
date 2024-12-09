@@ -62,7 +62,6 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 
     for (const auto& tableInfo : new_module->wasmFile->tables)
     {
-        assert(tableInfo.limits.min <= tableInfo.limits.max);
         auto table = MakeRef<Table>();
         table->max = tableInfo.limits.max;
         table->elements.reserve(tableInfo.limits.min);
@@ -97,7 +96,6 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 
         if (element.mode == WasmFile::ElementMode::Active || element.mode == WasmFile::ElementMode::Declarative)
         {
-            element.type = UINT32_MAX;
             element.table = UINT32_MAX;
             element.expr.clear();
             element.functionIndexes.clear();
@@ -124,8 +122,8 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
     if (new_module->wasmFile->startFunction != UINT32_MAX && new_module->wasmFile->startFunction >= new_module->functions.size())
         throw WasmFile::InvalidWASMException();
 
-    if (new_module->wasmFile->startFunction != UINT32_MAX)
-        run_function(new_module, new_module->wasmFile->startFunction, {});
+    if (new_module->wasmFile->startFunction)
+        run_function(new_module, *new_module->wasmFile->startFunction, {});
 
     if (!dont_make_current)
         m_current_module = new_module;
@@ -424,7 +422,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 uint32_t addPages = m_frame->stack.pop_as<uint32_t>();
 
-                if (memory->size + addPages > std::min(memory->max, 65536u))
+                if (memory->size + addPages > (memory->max ? *memory->max : WasmFile::MAX_WASM_PAGES))
                 {
                     m_frame->stack.push((uint32_t)-1);
                     break;
@@ -948,7 +946,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             }
             case Opcode::elem_drop: {
                 WasmFile::Element& elem = mod->wasmFile->elements[std::get<uint32_t>(instruction.arguments)];
-                elem.type = UINT32_MAX;
                 elem.table = UINT32_MAX;
                 elem.expr.clear();
                 elem.functionIndexes.clear();
@@ -990,21 +987,18 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 Reference value = m_frame->stack.pop_as<Reference>();
 
-                // NOTE: If the limits max is not present, it's UINT32_MAX
-                if ((uint64_t)table->elements.size() + addEntries > table->max)
+                if ((uint64_t)table->elements.size() + addEntries > (table->max ? *table->max : UINT32_MAX))
                 {
                     m_frame->stack.push((uint32_t)-1);
                     break;
                 }
 
-                if (table->elements.size() + addEntries <= table->max)
-                {
-                    assert(addEntries >= 0);
-                    for (uint32_t i = 0; i < addEntries; i++)
-                        table->elements.push_back(value);
-                }
-
                 m_frame->stack.push(oldSize);
+
+                assert(addEntries >= 0);
+                for (uint32_t i = 0; i < addEntries; i++)
+                    table->elements.push_back(value);
+
                 break;
             }
             case Opcode::table_size:
@@ -1699,7 +1693,7 @@ Ref<Module> VM::get_registered_module(const std::string& name)
     return m_registered_modules[name];
 }
 
-Value VM::run_bare_code_returning(Ref<Module> mod, std::vector<Instruction> instructions, Type returnType)
+Value VM::run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction>& instructions, Type returnType)
 {
     uint32_t ip = 0;
     ValueStack stack;
