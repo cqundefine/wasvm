@@ -23,7 +23,7 @@ public:
 
     virtual void move_to(size_t offset) override
     {
-        if (offset >= size())
+        if (offset > size())
             throw StreamReadException();
         m_current = m_begin + offset;
     }

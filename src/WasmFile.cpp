@@ -10,6 +10,11 @@ namespace WasmFile
 {
     Ref<WasmFile> s_currentWasmFile;
 
+    static std::vector<Instruction> parse_with_current_wasm_file(Stream& stream)
+    {
+        return parse(stream, s_currentWasmFile);
+    }
+
     Limits Limits::read_from_stream(Stream& stream)
     {
         uint8_t type = stream.read_little_endian<uint8_t>();
@@ -116,7 +121,7 @@ namespace WasmFile
         }
         else
         {
-            fprintf(stderr, "Error: Invalid import type: %d\n", type);
+            std::println(std::cerr, "Error: Invalid import type: {}", type);
             throw InvalidWASMException();
         }
     }
@@ -204,18 +209,9 @@ namespace WasmFile
         }
 
         if (has_element_expressions)
-        {
-            uint32_t size = stream.read_leb<uint32_t>();
-            for (uint32_t i = 0; i < size; i++)
-            {
-                std::vector<Instruction> index = parse(stream, s_currentWasmFile);
-                element.referencesExpr.push_back(index);
-            }
-        }
+            element.referencesExpr = stream.read_vec_with_function<std::vector<Instruction>, parse_with_current_wasm_file>();
         else
-        {
             element.functionIndexes = stream.read_vec<uint32_t>();
-        }
 
         return element;
     }
@@ -288,7 +284,7 @@ namespace WasmFile
         }
         else
         {
-            fprintf(stderr, "Unsupported data type: %d\n", type);
+            std::println(std::cerr, "Unsupported data type: {}", type);
             throw InvalidWASMException();
         }
     }
@@ -305,7 +301,7 @@ namespace WasmFile
 
             if (signature != WASM_SIGNATURE)
             {
-                fprintf(stderr, "Not a WASM file!\n");
+                std::println(std::cerr, "Not a WASM file!");
                 throw InvalidWASMException();
             }
 
@@ -319,7 +315,7 @@ namespace WasmFile
                 Section tag = (Section)stream.read_little_endian<uint8_t>();
                 uint32_t size = stream.read_leb<uint32_t>();
 
-                if (vector_contains(foundSections, tag))
+                if (tag != Section::Custom && vector_contains(foundSections, tag))
                     throw InvalidWASMException();
                 foundSections.push_back(tag);
 
@@ -330,6 +326,7 @@ namespace WasmFile
                 switch (tag)
                 {
                     case Section::Custom:
+                        sectionStream.read_typed<std::string>();
                         sectionStream.move_to(sectionStream.size());
                         break;
                     case Section::Type:
@@ -370,7 +367,7 @@ namespace WasmFile
                         break;
                     }
                     default:
-                        fprintf(stderr, "Warning: Unknown section: %d\n", static_cast<int>(tag));
+                        std::println(std::cerr, "Warning: Unknown section: {}", static_cast<int>(tag));
                         throw InvalidWASMException();
                 }
 
@@ -405,7 +402,7 @@ namespace WasmFile
                 return exportValue;
         }
 
-        fprintf(stderr, "Error: Tried to find a non existent export: %s\n", name.c_str());
+        std::println(std::cerr, "Error: Tried to find a non existent export: {}", name);
         throw Trap();
     }
 
@@ -429,6 +426,7 @@ namespace WasmFile
         else
         {
             stream.skip(-1);
+            // FIXME: This s33
             return { .type = {}, .index = stream.read_leb<uint64_t>() };
         }
     }
@@ -440,7 +438,7 @@ namespace WasmFile
 
         if (index >= wasmFile->functionTypes.size())
         {
-            fprintf(stderr, "Error: Invalid block type index: %lu\n", index);
+            std::println(std::cerr, "Error: Invalid block type index: {}", index);
             throw InvalidWASMException();
         }
 
@@ -460,7 +458,7 @@ namespace WasmFile
 
         if (index >= wasmFile->functionTypes.size())
         {
-            fprintf(stderr, "Error: Invalid block type index: %lu\n", index);
+            std::println(std::cerr, "Error: Invalid block type index: {}", index);
             throw InvalidWASMException();
         }
 

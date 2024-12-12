@@ -28,7 +28,7 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
 
     if (function->type.returns.size() > 1)
     {
-        fprintf(stderr, "More than one return value is not supported in JIT\n");
+        std::println(std::cerr, "Error: More than one return value is not supported in JIT");
         throw JITCompilationException();
     }
 
@@ -81,7 +81,7 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
                 push_value(Value::Type::UInt64, JIT::Operand::Register(GPR0));
                 break;
             default:
-                fprintf(stderr, "Opcode 0x%x not supported in JIT\n", instruction.opcode);
+                std::println(std::cerr, "Error: Opcode {:#x} not supported in JIT", instruction.opcode);
                 throw JITCompilationException();
         }
     }
@@ -97,7 +97,7 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
             m_jit.mov64(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::data_offset()), JIT::Operand::Register(GPR0));
         else
         {
-            fprintf(stderr, "Unsupported value type in JIT\n");
+            std::println(std::cerr, "Error: Unsupported value type in JIT");
             throw JITCompilationException();
         }
 
@@ -119,7 +119,7 @@ void Compiler::get_local(uint32_t index)
         m_jit.mov64(JIT::Operand::Register(GPR0), JIT::Operand::MemoryBaseAndOffset(LOCALS_ARRAY_REGISTER, localDataOffset));
     else
     {
-        fprintf(stderr, "Unsupported value type in JIT\n");
+        std::println(std::cerr, "Error: Unsupported value type in JIT");
         throw JITCompilationException();
     }
 

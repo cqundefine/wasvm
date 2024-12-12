@@ -61,7 +61,7 @@ Type get_value_type(Value value)
         assert(false);
     }
 
-    fprintf(stderr, "Error: Unexpected value type\n");
+    std::println(std::cerr, "Error: Unexpected value type");
     throw Trap();
 }
 
@@ -72,7 +72,7 @@ ReferenceType get_reference_type_from_reftype(Type type)
     if (type == Type::externref)
         return ReferenceType::Extern;
 
-    fprintf(stderr, "Error: Unexpected ref type\n");
+    std::println(std::cerr, "Error: Unexpected ref type");
     throw Trap();
 }
 

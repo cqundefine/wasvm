@@ -92,11 +92,17 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
 
     for (const auto& element : wasmFile->elements)
     {
-        VALIDATION_ASSERT(element.table < m_tables.size());
+        if (element.mode == WasmFile::ElementMode::Active)
+            VALIDATION_ASSERT(element.table < m_tables.size());
+
         for (const auto& expression : element.referencesExpr)
             validate_constant_expression(expression, element.valueType, true);
+
         if (element.expr.size() > 0)
             validate_constant_expression(element.expr, Type::i32, true);
+
+        for (auto index : element.functionIndexes)
+            VALIDATION_ASSERT(index < m_functions.size());
     }
 
     for (const auto& data : wasmFile->dataBlocks)
@@ -399,8 +405,6 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                     Type b = stack.back();
                     stack.pop_back();
                     stack.push_back(a);
-                    printf("%d %d %d\n", (uint8_t)a, (uint8_t)b, arguments[0]);
-                    fflush(stdout);
                     VALIDATION_ASSERT(a == (Type)arguments[0]);
                     VALIDATION_ASSERT(b == (Type)arguments[0]);
                 }
@@ -743,6 +747,7 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                 break;
             }
             case Opcode::ref_func:
+                // TODO: Check if the function was declared
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
                 stack.push_back(Type::funcref);
                 break;
@@ -835,7 +840,7 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                 expect(Type::i32);
                 break;
             default:
-                fprintf(stderr, "Error: No validation for opcode 0x%x\n", static_cast<uint32_t>(instruction.opcode));
+                std::println(std::cerr, "Error: No validation for opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
                 VALIDATION_ASSERT(false);
         }
     }
@@ -878,6 +883,7 @@ void Validator::validate_constant_expression(const std::vector<Instruction>& ins
                 stack.push_back(std::get<Type>(instruction.arguments));
                 break;
             case Opcode::ref_func:
+                // TODO: Check if the function was declared
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
                 stack.push_back(Type::funcref);
                 break;

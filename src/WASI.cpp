@@ -35,7 +35,7 @@ namespace WASI
 
     DEFINE_WASI_CALL(args_get)
     {
-        fprintf(stderr, "Warning: args_get not implemented\n");
+        std::println(std::cerr, "Warning: args_get not implemented");
         return { (uint32_t)0 };
     }
 
@@ -44,7 +44,7 @@ namespace WASI
         uint32_t count = 0;
         uint32_t size = 0;
 
-        fprintf(stderr, "Warning: args_sizes_get not implemented\n");
+        std::println(std::cerr, "Warning: args_sizes_get not implemented");
 
         // for (char **s = argv; *s; s++)
         // {
@@ -73,7 +73,7 @@ namespace WASI
 
     DEFINE_WASI_CALL(environ_get)
     {
-        fprintf(stderr, "Warning: environ_get not implemented\n");
+        std::println(std::cerr, "Warning: environ_get not implemented");
         return { (uint32_t)0 };
     }
 
@@ -82,7 +82,7 @@ namespace WASI
         uint32_t count = 0;
         uint32_t size = 0;
 
-        fprintf(stderr, "Warning: environ_sizes_get not implemented\n");
+        std::println(std::cerr, "Warning: environ_sizes_get not implemented");
 
         // for (char **s = environ; *s; s++)
         // {
@@ -115,7 +115,7 @@ namespace WASI
 
     DEFINE_WASI_CALL(fd_prestat_dir_name)
     {
-        fprintf(stderr, "Warning: fd_prestat_dir_name not implemented: %d\n", args[0].get<uint32_t>());
+        std::println(std::cerr, "Warning: fd_prestat_dir_name not implemented: {}", args[0].get<uint32_t>());
 
         if (args[0].get<uint32_t>() != 3)
             return { (uint32_t)8 };
@@ -129,7 +129,7 @@ namespace WASI
 
     DEFINE_WASI_CALL(fd_prestat_get)
     {
-        fprintf(stderr, "Warning: fd_prestat_get not implemented: %d\n", args[0].get<uint32_t>());
+        std::println(std::cerr, "Warning: fd_prestat_get not implemented: {}", args[0].get<uint32_t>());
 
         if (args[0].get<uint32_t>() != 3)
             return { (uint32_t)8 };
@@ -164,7 +164,7 @@ namespace WASI
     {
         uint32_t count = 0;
 
-        // fprintf(stderr, "Warning: poll_oneoff not implemented\n");
+        // std::println(std::cerr, "Warning: poll_oneoff not implemented");
 
         memcpy(VM::memory() + args[3].get<uint32_t>(), &count, sizeof(count));
 
@@ -227,7 +227,7 @@ namespace WASI
 
 #undef WASI_CALL
 
-        fprintf(stderr, "Error: Invalid WASI call: %s\n", name.c_str());
+        std::println(std::cerr, "Error: Invalid WASI call: {}", name);
         throw Trap();
     }
 }

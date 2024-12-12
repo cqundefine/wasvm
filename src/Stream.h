@@ -72,7 +72,7 @@ public:
     }
 
     // FIXME: Make this take the actual size of the varuint
-    template <IsUnsignedIntegral T>
+    template <IsUnsignedIntegral T, uint8_t bits>
     T read_leb()
     {
         T value = 0;
@@ -85,7 +85,25 @@ public:
             numberBytes++;
         } while (byte & 0x80);
 
+        uint8_t maxBytes = ceil_div(bits, 7);
+        if (numberBytes > maxBytes)
+            throw StreamReadException();
+
+        if (numberBytes == maxBytes)
+        {
+            uint8_t excessBits = maxBytes * 7 - bits;
+            uint8_t excessMask = ((1 << excessBits) - 1) << (7 - excessBits);
+            if (byte & excessMask)
+                throw StreamReadException();
+        }
+
         return value;
+    }
+
+    template <IsUnsignedIntegral T>
+    T read_leb()
+    {
+        return read_leb<T, sizeof(T) * 8>();
     }
 
     template <IsSignedIntegral T, uint8_t bits>
@@ -135,13 +153,17 @@ public:
     std::string read_typed()
     {
         uint32_t size = read_leb<uint32_t>();
+
         char* arr = (char*)malloc(size + 1);
         read((void*)arr, size);
         arr[size] = 0;
-        if (!is_valid_utf8(arr))
-            throw StreamReadException();
+
         std::string newString = std::string(arr, size);
         free(arr);
+
+        if (!is_valid_utf8(newString))
+            throw StreamReadException();
+
         return newString;
     }
 

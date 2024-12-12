@@ -66,7 +66,17 @@ bool vector_contains(const std::vector<T>& v, T x)
     return false;
 }
 
-bool is_valid_utf8(const char* string);
+bool is_valid_utf8(const std::string& string);
+
+template<typename T, typename U>
+    requires std::is_arithmetic_v<T> && std::is_arithmetic_v<U>
+constexpr T ceil_div(T a, U b)
+{
+    T result = a / b;
+    if ((a % b) != 0 && (a > 0) == (b > 0))
+        result++;
+    return result;
+}
 
 using float32_t = float;
 using float64_t = double;

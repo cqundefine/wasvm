@@ -208,7 +208,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                         instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     default:
-                        fprintf(stderr, "Error: Unknown opcode 0x%x %d\n", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
+                        std::println(std::cerr, "Error: Unknown opcode {:#x} {}", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
                         throw WasmFile::InvalidWASMException();
                 }
                 break;
@@ -471,7 +471,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                         instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     default:
-                        fprintf(stderr, "Error: Unknown opcode 0x%x %d\n", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
+                        std::println(std::cerr, "Error: Unknown opcode {:#x} {}", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
                         throw WasmFile::InvalidWASMException();
                 }
                 break;
@@ -613,7 +613,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode });
                 break;
             default:
-                fprintf(stderr, "Error: Unknown opcode 0x%x\n", static_cast<uint32_t>(opcode));
+                std::println(std::cerr, "Error: Unknown opcode {:#x}", static_cast<uint32_t>(opcode));
                 throw WasmFile::InvalidWASMException();
         }
     }

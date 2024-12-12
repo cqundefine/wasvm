@@ -21,7 +21,7 @@ public:
     {
         if (size() == 0)
         {
-            fprintf(stderr, "Error: Tried to pop from an empty stack\n");
+            std::println(std::cerr, "Error: Tried to pop from an empty stack");
             throw Trap();
         }
         Value value = m_stack.back();
@@ -35,7 +35,7 @@ public:
         Value value = pop();
         if (!value.holds_alternative<ToValueType<T>>())
         {
-            printf("Error: Unxpected type on the stack: %s, expected %s\n", get_type_name(get_value_type(value)).c_str(), value_type_name<ToValueType<T>>);
+            std::println(std::cerr, "Error: Unxpected type on the stack: {}, expected {}", get_type_name(get_value_type(value)), value_type_name<ToValueType<T>>);
             throw Trap();
         }
         return std::bit_cast<T>(value.get<ToValueType<T>>());
@@ -57,24 +57,6 @@ public:
     {
         return m_stack.back();
     }
-
-    // Label nth_label(uint32_t n)
-    // {
-    //     n++;
-    //     for (auto it = m_stack.rbegin(); it != m_stack.rend(); ++it)
-    //     {
-    //         if (it->holds_alternative<Label>())
-    //         {
-    //             if (--n == 0)
-    //             {
-    //                 return it->get<Label>();
-    //             }
-    //         }
-    //     }
-
-    //     fprintf(stderr, "Error: Not enough labels on the stack\n");
-    //     throw Trap();
-    // }
 
     void erase(uint32_t fromBegin, uint32_t fromEnd)
     {

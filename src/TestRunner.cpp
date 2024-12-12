@@ -4,6 +4,7 @@
 #include <VM.h>
 #include <bit>
 #include <fstream>
+#include <print>
 #include <math.h>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
@@ -121,7 +122,7 @@ bool compare_values(Value a, Value b)
     assert(false);
 }
 
-std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, uint32_t line, nlohmann::json action)
+std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string& path, uint32_t line, nlohmann::json action)
 {
     std::string actionType = action["type"];
     if (actionType == "invoke")
@@ -134,7 +135,7 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, 
             {
                 stats.skipped++;
                 failed = true;
-                printf("%s/%u skipped: failed to parse argument of type: %s\n", path, line, arg["type"].get<std::string>().c_str());
+                std::println("{}/{} skipped: failed to parse argument of type: {}", path, line, arg["type"].get<std::string>());
                 break;
             }
             else
@@ -158,7 +159,7 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, 
         {
             stats.skipped++;
             failed = true;
-            printf("%s/%u skipped: failed to compile JIT code\n", path, line);
+            std::println("{}/{} skipped: failed to compile JIT code", path, line);
             return {};
         }
     }
@@ -178,12 +179,12 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const char* path, 
     {
         stats.skipped++;
         failed = true;
-        printf("%s/%u skipped: unsupported action type: %s\n", path, line, actionType.c_str());
+        std::println("{}/{} skipped: unsupported action type: {}", path, line, actionType);
         return {};
     }
 }
 
-TestStats run_tests(const char* path)
+TestStats run_tests(const std::string& path)
 {
     TestStats stats {};
 
@@ -198,18 +199,18 @@ TestStats run_tests(const char* path)
     }
     catch (WasmFile::InvalidWASMException e)
     {
-        printf("Failed to load spectest wasm\n");
+        std::println("Failed to load spectest wasm");
         stats.vm_error = true;
         return stats;
     }
     catch (Trap e)
     {
-        printf("Failed to load spectest wasm\n");
+        std::println("Failed to load spectest wasm");
         stats.vm_error = true;
         return stats;
     }
 
-    chdir(path);
+    chdir(path.c_str());
 
     std::filesystem::path fsPath(path);
     std::ifstream f(fsPath.filename().string() + ".json");
@@ -223,29 +224,35 @@ TestStats run_tests(const char* path)
         uint32_t line = command["line"].get<uint32_t>();
         if (type == "module")
         {
-            FileStream fileStream(command["filename"].get<std::string>().c_str());
+            stats.total++;
+            FileStream fileStream(command["filename"].get<std::string>());
             try
             {
                 auto file = WasmFile::WasmFile::read_from_stream(fileStream);
                 VM::load_module(file);
                 if (command.contains("name"))
                     VM::register_module(command["name"], VM::current_module());
+                std::println("{}/{} module loaded", path, line);
                 module_loaded = true;
+                stats.passed++;
             }
             catch (WasmFile::InvalidWASMException e)
             {
-                printf("%s/%u module failed to load\n", path, line);
+                std::println("{}/{} module failed to load", path, line);
                 module_loaded = false;
+                stats.failed_to_load++;
             }
             catch (Trap e)
             {
-                printf("%s/%u module failed to load\n", path, line);
+                std::println("{}/{} module failed to load", path, line);
                 module_loaded = false;
+                stats.failed_to_load++;
             }
             catch (JITCompilationException e)
             {
-                printf("%s/%u module failed to load\n", path, line);
+                std::println("{}/{} module failed to load", path, line);
                 module_loaded = false;
+                stats.failed_to_load++;
             }
         }
         else if (type == "register")
@@ -259,7 +266,7 @@ TestStats run_tests(const char* path)
         {
             if (!module_loaded)
             {
-                printf("%s/%u action skipped: module not loaded\n", path, line);
+                std::println("{}/{} action skipped: module not loaded", path, line);
                 continue;
             }
 
@@ -273,7 +280,7 @@ TestStats run_tests(const char* path)
             catch (Trap t)
             {
                 failed = true;
-                printf("%s/%u failed: unexpected trap\n", path, line);
+                std::println("{}/{} failed: unexpected trap", path, line);
                 continue;
             }
 
@@ -283,7 +290,7 @@ TestStats run_tests(const char* path)
             if (returnValues.size() != 0)
             {
                 failed = true;
-                printf("%s/%u action failed: returned values: %zu\n", path, line, returnValues.size());
+                std::println("{}/{} action failed: returned values: {}", path, line, returnValues.size());
                 continue;
             }
 
@@ -291,7 +298,7 @@ TestStats run_tests(const char* path)
             if (expectedValues.size() != 0)
             {
                 failed = true;
-                printf("%s/%u action failed: has expected return values: %zu\n", path, line, expectedValues.size());
+                std::println("{}/{} action failed: has expected return values: {}", path, line, expectedValues.size());
                 continue;
             }
         }
@@ -302,7 +309,7 @@ TestStats run_tests(const char* path)
             if (!module_loaded)
             {
                 stats.failed_to_load++;
-                printf("%s/%u skipped: module not loaded\n", path, line);
+                std::println("{}/{} skipped: module not loaded", path, line);
                 continue;
             }
 
@@ -317,7 +324,7 @@ TestStats run_tests(const char* path)
             {
                 stats.failed++;
                 failed = true;
-                printf("%s/%u failed: unexpected trap\n", path, line);
+                std::println("{}/{} failed: unexpected trap", path, line);
                 continue;
             }
 
@@ -329,7 +336,7 @@ TestStats run_tests(const char* path)
             {
                 stats.failed++;
                 failed = true;
-                printf("%s/%u failed: unexpected return value count %zu, expected %zu\n", path, line, returnValues.size(), expectedValues.size());
+                std::println("{}/{} failed: unexpected return value count {}, expected {}", path, line, returnValues.size(), expectedValues.size());
                 continue;
             }
 
@@ -340,7 +347,7 @@ TestStats run_tests(const char* path)
                 {
                     stats.skipped++;
                     failed = true;
-                    printf("%s/%u skipped: failed to parse return value of type: %s\n", path, line, expectedValues[i]["type"].get<std::string>().c_str());
+                    std::println("{}/{} skipped: failed to parse return value of type: {}", path, line, expectedValues[i]["type"].get<std::string>());
                     break;
                 }
                 auto expectedValue = maybeExpectedValue.value();
@@ -348,7 +355,7 @@ TestStats run_tests(const char* path)
                 {
                     stats.failed++;
                     failed = true;
-                    printf("%s/%u failed: return value %zu has unexpected value %s, expected %s\n", path, line, i, value_to_string(returnValues[i]).c_str(), value_to_string(expectedValue).c_str());
+                    std::println("{}/{} failed: return value {} has unexpected value {}, expected {}", path, line, i, value_to_string(returnValues[i]), value_to_string(expectedValue));
                     break;
                 }
             }
@@ -356,7 +363,7 @@ TestStats run_tests(const char* path)
             if (!failed)
             {
                 stats.passed++;
-                printf("%s/%u passed\n", path, line);
+                std::println("{}/{} passed", path, line);
             }
         }
         else if (type == "assert_trap")
@@ -366,7 +373,7 @@ TestStats run_tests(const char* path)
             if (!module_loaded)
             {
                 stats.failed_to_load++;
-                printf("%s/%u skipped: module not loaded\n", path, line);
+                std::println("{}/{} skipped: module not loaded", path, line);
                 continue;
             }
 
@@ -376,13 +383,19 @@ TestStats run_tests(const char* path)
             {
                 run_action(stats, failed, path, line, command["action"]);
                 stats.failed++;
-                printf("%s/%u failed: expected trap, not trapped\n", path, line);
+                std::println("{}/{} failed: expected trap, not trapped", path, line);
             }
             catch (Trap t)
             {
                 stats.passed++;
-                printf("%s/%u passed\n", path, line);
+                std::println("{}/{} passed", path, line);
             }
+        }
+        else if (type == "assert_exhaustion")
+        {
+            std::println("{}/{} failed: exhaustion not implemented", path, line);
+            stats.total++;
+            stats.failed++;
         }
         else if (type == "assert_invalid" || type == "assert_malformed")
         {
@@ -394,18 +407,18 @@ TestStats run_tests(const char* path)
 
             stats.total++;
 
-            FileStream fileStream(command["filename"].get<std::string>().c_str());
+            FileStream fileStream(command["filename"].get<std::string>());
             try
             {
                 auto file = WasmFile::WasmFile::read_from_stream(fileStream);
 
                 stats.failed++;
-                printf("%s/%u expected to not load, loaded\n", path, line);
+                std::println("{}/{} expected to not load, loaded", path, line);
             }
             catch (WasmFile::InvalidWASMException e)
             {
                 stats.passed++;
-                printf("%s/%u passed\n", path, line);
+                std::println("{}/{} passed", path, line);
             }
         }
         else if (type == "assert_uninstantiable" || type == "assert_unlinkable")
@@ -418,29 +431,31 @@ TestStats run_tests(const char* path)
 
             stats.total++;
 
-            FileStream fileStream(command["filename"].get<std::string>().c_str());
+            FileStream fileStream(command["filename"].get<std::string>());
             try
             {
                 auto file = WasmFile::WasmFile::read_from_stream(fileStream);
                 VM::load_module(file, true);
 
                 stats.failed++;
-                printf("%s/%u expected to not instantiate, instantiated\n", path, line);
+                std::println("{}/{} expected to not instantiate, instantiated", path, line);
             }
             catch (WasmFile::InvalidWASMException e)
             {
                 stats.failed++;
-                printf("%s/%u failed: module is invalid\n", path, line);
+                std::println("{}/{} failed: module is invalid", path, line);
             }
             catch (Trap e)
             {
                 stats.passed++;
-                printf("%s/%u passed\n", path, line);
+                std::println("{}/{} passed", path, line);
             }
         }
         else
         {
-            printf("command type unsupported: %s\n", type.c_str());
+            std::println("command type unsupported: {}", type);
+            stats.total++;
+            stats.skipped++;
         }
     }
 

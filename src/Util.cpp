@@ -1,5 +1,6 @@
 #include <Util.h>
 #include <cassert>
+#include <simdutf/simdutf.h>
 
 void fill_buffer_with_random_data(uint8_t* data, size_t size)
 {
@@ -15,36 +16,7 @@ void fill_buffer_with_random_data(uint8_t* data, size_t size)
 #endif
 }
 
-bool is_valid_utf8(const char* string)
+bool is_valid_utf8(const std::string& string)
 {
-    assert(string != nullptr);
-
-    while (*string)
-    {
-        switch (std::countl_one(static_cast<unsigned char>(*string)))
-        {
-            [[unlikely]] case 4:
-                ++string;
-                if (std::countl_one(static_cast<unsigned char>(*string)) != 1)
-                    return false;
-                [[fallthrough]];
-            [[unlikely]] case 3:
-                ++string;
-                if (std::countl_one(static_cast<unsigned char>(*string)) != 1)
-                    return false;
-                [[fallthrough]];
-            [[unlikely]] case 2:
-                ++string;
-                if (std::countl_one(static_cast<unsigned char>(*string)) != 1)
-                    return false;
-                [[fallthrough]];
-            [[likely]] case 0:
-                ++string;
-                break;
-            [[unlikely]] default:
-                return false;
-        }
-    }
-
-    return true;
+    return simdutf::validate_utf8_with_errors(string.c_str(), string.size()).error == simdutf::SUCCESS;
 }

@@ -12,4 +12,4 @@ struct TestStats
     uint32_t failed_to_load;
 };
 
-TestStats run_tests(const char* path);
+TestStats run_tests(const std::string& path);

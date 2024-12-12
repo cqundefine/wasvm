@@ -106,21 +106,11 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
     for (size_t i = 0; i < new_module->wasmFile->functionTypeIndexes.size(); i++)
     {
         auto function = MakeRef<Function>();
-
-        auto functionTypeIndex = new_module->wasmFile->functionTypeIndexes[i];
-        // FIXME: This should be checked while loading the file
-        if (functionTypeIndex >= new_module->wasmFile->functionTypes.size())
-            throw WasmFile::InvalidWASMException();
-
-        function->type = new_module->wasmFile->functionTypes[functionTypeIndex];
+        function->type = new_module->wasmFile->functionTypes[new_module->wasmFile->functionTypeIndexes[i]];
         function->mod = new_module;
         function->code = new_module->wasmFile->codeBlocks[i];
         new_module->functions.push_back(function);
     }
-
-    // FIXME: This should be checked while loading the file
-    if (new_module->wasmFile->startFunction != UINT32_MAX && new_module->wasmFile->startFunction >= new_module->functions.size())
-        throw WasmFile::InvalidWASMException();
 
     if (new_module->wasmFile->startFunction)
         run_function(new_module, *new_module->wasmFile->startFunction, {});
@@ -181,7 +171,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
     // }
     // catch (JITCompilationException error)
     // {
-    //     fprintf(stderr, "Failed to compile JIT\n");
+    //     std::println(std::cerr, "Failed to compile JIT");
     //     throw JITCompilationException();
     // }
 
@@ -254,19 +244,8 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 break;
             }
             case Opcode::return_: {
-                std::vector<Value> returnValues;
-                for (size_t i = 0; i < function->type.returns.size(); i++)
-                    returnValues.push_back(m_frame->stack.pop());
-
-                std::reverse(returnValues.begin(), returnValues.end());
-
-                // FIXME: This shouldn't be needed after validator is done
-                for (size_t i = 0; i < returnValues.size(); i++)
-                    if (get_value_type(returnValues[i]) != function->type.returns[i])
-                        throw Trap();
-
+                std::vector<Value> returnValues = m_frame->stack.pop_n_values(function->type.returns.size());
                 clean_up_frame();
-
                 return returnValues;
             }
             case Opcode::call:
@@ -1655,7 +1634,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 run_binary_operation<float64x2_t, float64x2_t, operation_vector_max>();
                 break;
             default:
-                fprintf(stderr, "Error: Unknown opcode 0x%x\n", static_cast<uint32_t>(instruction.opcode));
+                std::println(std::cerr, "Error: Unknown opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
                 throw Trap();
         }
     }
@@ -1668,7 +1647,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             auto returnValue = m_frame->stack.pop();
             if (get_value_type(returnValue) != function->type.returns[i])
             {
-                printf("Error: Unxpected return value on the stack: %s, expected %s\n", get_type_name(get_value_type(returnValue)).c_str(), get_type_name(function->type.returns[i]).c_str());
+                std::println(std::cerr, "Error: Unxpected return value on the stack: {}, expected {}", get_type_name(get_value_type(returnValue)), get_type_name(function->type.returns[i]));
                 throw Trap();
             }
             returnValues.push_back(returnValue);
@@ -1679,7 +1658,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
     if (m_frame->stack.size() != 0)
     {
-        printf("Error: Stack not empty when running function, size is %u\n", m_frame->stack.size());
+        std::println(std::cerr, "Error: Stack not empty when running function, size is {}", m_frame->stack.size());
         throw Trap();
     }
 
@@ -1698,18 +1677,13 @@ Value VM::run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction
     uint32_t ip = 0;
     ValueStack stack;
 
-    while (ip < instructions.size())
+    for (const auto& instruction : instructions)
     {
-        const Instruction& instruction = instructions[ip++];
-
         switch (instruction.opcode)
         {
             case Opcode::end:
-                if (ip < instructions.size())
-                    throw Trap();
                 break;
             case Opcode::global_get:
-                // FIXME: Verify that the global is const
                 stack.push(mod->get_global(std::get<uint32_t>(instruction.arguments))->value);
                 break;
             case Opcode::i32_const:
@@ -1734,7 +1708,7 @@ Value VM::run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction
                 stack.push(std::get<uint128_t>(instruction.arguments));
                 break;
             default:
-                fprintf(stderr, "Error: Unknown or disallowed in bare code opcode 0x%x\n", static_cast<uint32_t>(instruction.opcode));
+                std::println(std::cerr, "Error: Unknown or disallowed in bare code opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
                 throw Trap();
         }
     }
@@ -1816,22 +1790,10 @@ void VM::branch_to_label(uint32_t index)
 
 void VM::call_function(Ref<Function> function)
 {
-    std::vector<Value> args;
-    for (size_t i = 0; i < function->type.params.size(); i++)
-        args.push_back(m_frame->stack.pop());
-    std::reverse(args.begin(), args.end());
-
-    // FIXME: This shouldn't be needed after validator is done
-    for (size_t i = 0; i < function->type.params.size(); i++)
-    {
-        if (get_value_type(args.at(i)) != function->type.params.at(i))
-            throw Trap();
-    }
+    std::vector<Value> args = m_frame->stack.pop_n_values(function->type.params.size());
 
     // FIXME: Are we sure the return values are correct
-    std::vector<Value> returnedValues;
-    returnedValues = run_function(function->mod, function, args);
-
+    std::vector<Value> returnedValues = run_function(function->mod, function, args);
     for (const auto& returned : returnedValues)
         m_frame->stack.push(returned);
 }

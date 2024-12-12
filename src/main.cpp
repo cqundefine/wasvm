@@ -3,7 +3,7 @@
 #include <VM.h>
 #include <argparse/argparse.hpp>
 #include <nlohmann/json.hpp>
-#include <stdio.h>
+#include <print>
 
 int main(int argc, char** argv)
 {
@@ -35,7 +35,7 @@ int main(int argc, char** argv)
 
     if (parser["-t"] == true)
     {
-        TestStats stats = run_tests(parser.get("path").c_str());
+        TestStats stats = run_tests(parser.get("path"));
 
         nlohmann::json j;
         j["vm_error"] = stats.vm_error;
@@ -44,7 +44,7 @@ int main(int argc, char** argv)
         j["failed"] = stats.failed;
         j["skipped"] = stats.skipped;
         j["failed_to_load"] = stats.failed_to_load;
-        printf("%s\n", j.dump().c_str());
+        std::println("{}", j.dump());
     }
     else
     {

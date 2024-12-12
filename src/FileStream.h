@@ -7,8 +7,8 @@
 class FileStream : public Stream
 {
 public:
-    FileStream(const char* filename)
-        : m_file(fopen(filename, "rb"))
+    FileStream(const std::string& filename)
+        : m_file(fopen(filename.c_str(), "rb"))
     {
         assert(m_file != nullptr);
 

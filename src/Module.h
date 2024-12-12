@@ -41,6 +41,7 @@ public:
     Ref<WasmFile::WasmFile> wasmFile;
     std::vector<Ref<Function>> functions;
 
+    // FIXME: Do these actually need a function, because the validator guarantees us correctness
     void add_table(Ref<Table> table);
     Ref<Table> get_table(uint32_t index) const;
 
