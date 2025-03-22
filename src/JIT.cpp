@@ -195,7 +195,7 @@ void JIT::native_call(void* callee)
 
 void* JIT::build()
 {
-    FILE* f = fopen("/home/undefine/Coding/WASVM/jit.bin", "wb");
+    FILE* f = fopen("/home/undefine/Coding/wasvm/jit.bin", "wb");
     assert(f);
     fwrite(code.data(), code.size(), 1, f);
     fclose(f);

@@ -24,15 +24,22 @@ struct Memory
 
 struct Table
 {
+    Type type;
+
     std::vector<Reference> elements;
     std::optional<uint32_t> max;
+
+    Table(Type type);
 };
 
 struct Global
 {
+    Type type;
+    WasmFile::GlobalMutability mut;
+
     Value value;
 
-    Global(Value value);
+    Global(Type type, WasmFile::GlobalMutability mut, Value value);
 };
 
 class Module

@@ -3,16 +3,30 @@
 #include <Opcode.h>
 #include <Parser.h>
 #include <VM.h>
-#include <stdio.h>
+#include <utility>
 
-void block(Label label)
+__attribute((sysv_abi)) void block(size_t continuation, uint32_t arity, size_t stackHeight)
 {
-    VM::frame()->label_stack.push_back(label);
+    VM::frame()->label_stack.push_back(Label {
+        .continuation = continuation,
+        .arity = arity,
+        .stackHeight = stackHeight });
 }
 
-void end()
+__attribute((sysv_abi)) void end()
 {
     VM::frame()->label_stack.pop_back();
+}
+
+__attribute((sysv_abi)) void branch_to_label(uint32_t index)
+{
+    // FIXME: Does this need to be a loop
+    Label label;
+    for (uint32_t i = 0; i < index + 1; i++)
+    {
+        label = VM::frame()->label_stack.back();
+        VM::frame()->label_stack.pop_back();
+    }
 }
 
 JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFile)
@@ -45,11 +59,15 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
             case Opcode::block:
             case Opcode::loop: {
                 const BlockLoopArguments& arguments = std::get<BlockLoopArguments>(instruction.arguments);
-                m_jit.mov64(JIT::Operand::Register(ARG0), JIT::Operand::Immediate(*(uint64_t*)&arguments.label));
 
-                // label.stackHeight = rsp - paramCount
-                m_jit.mov64(JIT::Operand::Register(ARG1), JIT::Operand::Register(JIT::Reg::RSP));
-                m_jit.sub64(JIT::Operand::Register(ARG1), JIT::Operand::Immediate(arguments.blockType.get_param_types(function->mod->wasmFile).size() * 2 * sizeof(uint64_t)));
+                // TODO: continuation = rip
+
+                // arity = label.arity
+                m_jit.mov32(JIT::Operand::Register(ARG1), JIT::Operand::Immediate(arguments.label.arity));
+
+                // stackHeight = rsp - paramCount
+                m_jit.mov64(JIT::Operand::Register(ARG2), JIT::Operand::Register(JIT::Reg::RSP));
+                m_jit.sub64(JIT::Operand::Register(ARG2), JIT::Operand::Immediate(arguments.blockType.get_param_types(function->mod->wasmFile).size() * 2 * sizeof(uint64_t)));
 
                 m_jit.native_call((void*)block);
                 break;
@@ -57,6 +75,8 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
             case Opcode::end:
                 m_jit.native_call((void*)end);
                 break;
+            case Opcode::br:
+
             case Opcode::local_get:
                 get_local(std::get<uint32_t>(instruction.arguments));
                 break;
@@ -81,7 +101,7 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
                 push_value(Value::Type::UInt64, JIT::Operand::Register(GPR0));
                 break;
             default:
-                std::println(std::cerr, "Error: Opcode {:#x} not supported in JIT", instruction.opcode);
+                std::println(std::cerr, "Error: Opcode {:#x} not supported in JIT", std::to_underlying(instruction.opcode));
                 throw JITCompilationException();
         }
     }

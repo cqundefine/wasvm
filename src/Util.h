@@ -3,9 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <format>
-#include <iostream>
-#include <map>
 #include <memory>
 #include <sys/time.h>
 #include <vector>
@@ -19,6 +16,10 @@
     #define LIBC_GLIBC_VERSION(maj, min) __GLIBC_PREREQ((maj), (min))
 #else
     #define LIBC_GLIBC_VERSION(maj, min) 0
+#endif
+
+#if !defined(NDEBUG)
+    #define DEBUG_BUILD
 #endif
 
 #define OFFSET_OF(class, member) (reinterpret_cast<ptrdiff_t>(&reinterpret_cast<class*>(0x1000)->member) - 0x1000)
@@ -68,7 +69,7 @@ bool vector_contains(const std::vector<T>& v, T x)
 
 bool is_valid_utf8(const std::string& string);
 
-template<typename T, typename U>
+template <typename T, typename U>
     requires std::is_arithmetic_v<T> && std::is_arithmetic_v<U>
 constexpr T ceil_div(T a, U b)
 {

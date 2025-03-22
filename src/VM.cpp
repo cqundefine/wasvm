@@ -1,3 +1,4 @@
+#include "WasmFile.h"
 #include <Compiler.h>
 #include <Opcode.h>
 #include <Operators.h>
@@ -5,8 +6,9 @@
 #include <Util.h>
 #include <VM.h>
 #include <cstring>
+#include <print>
 
-void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
+Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 {
     auto new_module = MakeRef<Module>();
     new_module->wasmFile = file;
@@ -16,25 +18,41 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
         ImportLocation location = find_import(import.environment, import.name, import.type);
         switch (import.type)
         {
-            case WasmFile::ImportType::Function:
-                new_module->functions.push_back(location.module->functions[location.index]);
+            case WasmFile::ImportType::Function: {
+                const auto function = location.module->functions[location.index];
+                if (function->type != file->functionTypes[import.functionTypeIndex])
+                    throw Trap();
+                new_module->functions.push_back(function);
                 break;
-            case WasmFile::ImportType::Table:
-                new_module->add_table(location.module->get_table(location.index));
+            }
+            case WasmFile::ImportType::Table: {
+                const auto table = location.module->get_table(location.index);
+                // if (table->type != import.tableRefType || import.tableLimits <= WasmFile::Limits(table->elements.size(), table->max))
+                //     throw Trap();
+                new_module->add_table(table);
                 break;
-            case WasmFile::ImportType::Memory:
-                new_module->add_memory(location.module->get_memory(location.index));
+            }
+            case WasmFile::ImportType::Memory: {
+                const auto memory = location.module->get_memory(location.index);
+                // if (import.memoryLimits <= WasmFile::Limits(memory->size, memory->max))
+                //     throw Trap();
+                new_module->add_memory(memory);
                 break;
-            case WasmFile::ImportType::Global:
-                new_module->add_global(location.module->get_global(location.index));
+            }
+            case WasmFile::ImportType::Global: {
+                const auto global = location.module->get_global(location.index);
+                if (global->type != import.globalType || global->mut != import.globalMut)
+                    throw Trap();
+                new_module->add_global(global);
                 break;
+            }
             default:
                 assert(false);
         }
     }
 
     for (const auto& global : new_module->wasmFile->globals)
-        new_module->add_global(MakeRef<Global>(run_bare_code_returning(new_module, global.initCode, global.type)));
+        new_module->add_global(MakeRef<Global>(global.type, global.mut, run_bare_code_returning(new_module, global.initCode, global.type)));
 
     for (const auto& memory : new_module->wasmFile->memories)
         new_module->add_memory(MakeRef<Memory>(memory));
@@ -62,7 +80,7 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 
     for (const auto& tableInfo : new_module->wasmFile->tables)
     {
-        auto table = MakeRef<Table>();
+        auto table = MakeRef<Table>(tableInfo.refType);
         table->max = tableInfo.limits.max;
         table->elements.reserve(tableInfo.limits.min);
         for (uint32_t i = 0; i < tableInfo.limits.min; i++)
@@ -117,6 +135,8 @@ void VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 
     if (!dont_make_current)
         m_current_module = new_module;
+
+    return new_module;
 }
 
 void VM::register_module(const std::string& name, Ref<Module> module)
@@ -158,22 +178,25 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
     for (const auto local : function->code.locals)
         m_frame->locals.push_back(default_value_for_type(local));
 
-    // try
-    // {
-    //     auto jittedCode = Compiler::compile(function, mod->wasmFile);
-    //     Value returnValue;
-    //     jittedCode(m_frame->locals.data(), &returnValue);
-    //     clean_up_frame();
-    //     if (function->type.returns.size() == 0)
-    //         return {};
-    //     else
-    //         return { returnValue };
-    // }
-    // catch (JITCompilationException error)
-    // {
-    //     std::println(std::cerr, "Failed to compile JIT");
-    //     throw JITCompilationException();
-    // }
+    if (m_force_jit)
+    {
+        try
+        {
+            auto jittedCode = Compiler::compile(function, mod->wasmFile);
+            Value returnValue;
+            jittedCode(m_frame->locals.data(), &returnValue);
+            clean_up_frame();
+            if (function->type.returns.size() == 0)
+                return {};
+            else
+                return { returnValue };
+        }
+        catch (JITCompilationException error)
+        {
+            std::println(std::cerr, "Failed to compile JIT");
+            throw JITCompilationException();
+        }
+    }
 
     m_frame->label_stack.push_back(Label {
         .continuation = static_cast<uint32_t>(function->code.instructions.size()),
@@ -280,10 +303,8 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case Opcode::drop:
                 m_frame->stack.pop();
                 break;
-            case Opcode::select_typed:
-                // FIXME: Validate the types
-                [[fallthrough]];
-            case Opcode::select_: {
+            case Opcode::select_:
+            case Opcode::select_typed: {
                 uint32_t value = m_frame->stack.pop_as<uint32_t>();
 
                 Value val2 = m_frame->stack.pop();
@@ -1645,22 +1666,26 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
         for (size_t i = function->type.returns.size() - 1; i != (size_t)-1; i--)
         {
             auto returnValue = m_frame->stack.pop();
+#ifdef DEBUG_BUILD
             if (get_value_type(returnValue) != function->type.returns[i])
             {
                 std::println(std::cerr, "Error: Unxpected return value on the stack: {}, expected {}", get_type_name(get_value_type(returnValue)), get_type_name(function->type.returns[i]));
                 throw Trap();
             }
+#endif
             returnValues.push_back(returnValue);
         }
 
         std::reverse(returnValues.begin(), returnValues.end());
     }
 
+#ifdef DEBUG_BUILD
     if (m_frame->stack.size() != 0)
     {
         std::println(std::cerr, "Error: Stack not empty when running function, size is {}", m_frame->stack.size());
         throw Trap();
     }
+#endif
 
     clean_up_frame();
 
@@ -1777,6 +1802,7 @@ void VM::run_store_instruction(const WasmFile::MemArg& memArg)
 
 void VM::branch_to_label(uint32_t index)
 {
+    // FIXME: Does this need to be a loop
     Label label;
     for (uint32_t i = 0; i < index + 1; i++)
     {

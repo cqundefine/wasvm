@@ -4,7 +4,6 @@
 #include <Type.h>
 #include <Util.h>
 #include <exception>
-#include <map>
 #include <optional>
 #include <vector>
 
@@ -46,6 +45,12 @@ namespace WasmFile
         std::optional<uint32_t> max;
 
         static Limits read_from_stream(Stream& stream);
+
+        inline bool operator<=(const Limits& other) const
+        {
+            return min >= other.min
+                && (!other.max.has_value() || (max.has_value() && max.value() <= other.max.value()));
+        }
     };
 
     struct MemArg
@@ -198,7 +203,7 @@ namespace WasmFile
         std::vector<Data> dataBlocks;
         std::optional<uint32_t> dataCount;
 
-        static Ref<WasmFile> read_from_stream(Stream& stream);
+        static Ref<WasmFile> read_from_stream(Stream& stream, bool runValidator = true);
 
         Export find_export_by_name(const std::string& name);
 

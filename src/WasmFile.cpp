@@ -5,6 +5,7 @@
 #include <Util.h>
 #include <Validator.h>
 #include <WasmFile.h>
+#include <iostream>
 
 namespace WasmFile
 {
@@ -289,7 +290,7 @@ namespace WasmFile
         }
     }
 
-    Ref<WasmFile> WasmFile::read_from_stream(Stream& stream)
+    Ref<WasmFile> WasmFile::read_from_stream(Stream& stream, bool runValidator)
     {
         try
         {
@@ -384,7 +385,8 @@ namespace WasmFile
 
             s_currentWasmFile = nullptr;
 
-            Validator validator = Validator(wasm);
+            if (runValidator)
+                Validator validator = Validator(wasm);
 
             return wasm;
         }

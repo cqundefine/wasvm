@@ -1,12 +1,10 @@
 #pragma once
 
 #include <SIMD.h>
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <variant>
-#include <vector>
 
 struct Trap
 {
@@ -14,7 +12,7 @@ struct Trap
 
 struct Label
 {
-    uint32_t continuation;
+    size_t continuation;
     uint32_t arity;
     size_t stackHeight;
 };

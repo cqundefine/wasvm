@@ -8,3 +8,4 @@ libsodium
 .vscode
 spec
 !tests/spectest.wat
+.cache

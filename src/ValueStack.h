@@ -2,6 +2,7 @@
 
 #include <Type.h>
 #include <Value.h>
+#include <iostream>
 
 class ValueStack
 {
@@ -19,11 +20,13 @@ public:
 
     Value pop()
     {
+#ifdef DEBUG_BUILD
         if (size() == 0)
         {
             std::println(std::cerr, "Error: Tried to pop from an empty stack");
             throw Trap();
         }
+#endif
         Value value = m_stack.back();
         m_stack.pop_back();
         return value;
@@ -33,11 +36,13 @@ public:
     T pop_as()
     {
         Value value = pop();
+#ifdef DEBUG_BUILD
         if (!value.holds_alternative<ToValueType<T>>())
         {
             std::println(std::cerr, "Error: Unxpected type on the stack: {}, expected {}", get_type_name(get_value_type(value)), value_type_name<ToValueType<T>>);
             throw Trap();
         }
+#endif
         return std::bit_cast<T>(value.get<ToValueType<T>>());
     }
 
@@ -45,9 +50,7 @@ public:
     {
         std::vector<Value> values;
         for (uint32_t i = 0; i < n; i++)
-        {
             values.push_back(pop());
-        }
 
         std::reverse(values.begin(), values.end());
         return values;

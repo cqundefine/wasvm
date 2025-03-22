@@ -1,3 +1,4 @@
+#include "WasmFile.h"
 #include <FileStream.h>
 #include <TestRunner.h>
 #include <VM.h>
@@ -19,6 +20,18 @@ int main(int argc, char** argv)
         .help("which function of a module to run")
         .default_value(std::string("_start"));
 
+    parser.add_argument("-j", "--force-jit")
+        .help("force the usage of the experimental JIT")
+        .flag();
+
+    parser.add_argument("-n", "--no-wasm-validator")
+        .help("disable validation of WASM module")
+        .flag();
+
+    parser.add_argument("--load-test-module")
+        .help("load the spectest module")
+        .flag();
+
     parser.add_argument("path")
         .help("path of module/test to run");
 
@@ -31,6 +44,15 @@ int main(int argc, char** argv)
         std::cerr << err.what() << std::endl;
         std::cerr << parser;
         return 1;
+    }
+
+    VM::set_force_jit(parser["-j"] == true);
+
+    if (parser["--load-test-module"] == true)
+    {
+        FileStream test("spectest.wasm");
+        auto testModule = VM::load_module(WasmFile::WasmFile::read_from_stream(test), true);
+        VM::register_module("spectest", testModule);
     }
 
     if (parser["-t"] == true)
@@ -48,11 +70,13 @@ int main(int argc, char** argv)
     }
     else
     {
-        FileStream fileStream(argv[1]);
-        auto file = WasmFile::WasmFile::read_from_stream(fileStream);
+        FileStream fileStream(parser.get("path"));
+        auto file = WasmFile::WasmFile::read_from_stream(fileStream, parser["-n"] == false);
 
         VM::load_module(file);
 
         std::vector<Value> returnValues = VM::run_function(parser.get("-f"), {});
+        for (const auto value : returnValues)
+            std::println("{}", value_to_string(value));
     }
 }

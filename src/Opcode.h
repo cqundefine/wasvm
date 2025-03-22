@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstdint>
-
 enum class Opcode
 {
     unreachable = 0x00,

@@ -1,16 +1,125 @@
 #include <Parser.h>
 #include <Validator.h>
 #include <cassert>
+#include <iostream>
+#include <ostream>
+#include <print>
+#include <ranges>
+
+#define VALIDATION_ASSERT(x) \
+    if (!(x))                \
+        throw WasmFile::InvalidWASMException();
+
+class ValidatorType
+{
+public:
+    ValidatorType(Type type)
+        : m_type(type)
+        , m_known(true)
+    {
+    }
+
+    ValidatorType()
+        : m_type(Type::i32)
+        , m_known(false)
+    {
+    }
+
+    bool operator==(Type const& other) const
+    {
+        if (m_known)
+            return m_type == other;
+        return true;
+    }
+
+    bool operator==(ValidatorType const& other) const
+    {
+        if (m_known && other.m_known)
+            return m_type == other;
+        return true;
+    }
+
+    bool is_reference_type() const
+    {
+        if (m_known)
+            return ::is_reference_type(m_type);
+        return true;
+    }
+
+    Type type() const { return m_type; }
+    bool known() const { return m_known; }
+
+private:
+    Type m_type;
+    bool m_known;
+};
+
+enum class ValidatorLabelType
+{
+    Entry,
+    Block,
+    Loop,
+    If,
+    IfAfterElse,
+};
 
 struct ValidatorLabel
 {
     uint32_t stackHeight;
     std::vector<Type> returnTypes;
     std::vector<Type> paramTypes;
+    ValidatorLabelType type;
     bool unreachable;
 };
 
-#define VALIDATION_ASSERT(x) if (!(x)) throw WasmFile::InvalidWASMException();
+class ValidatorValueStack
+{
+public:
+    void push(ValidatorType type)
+    {
+        m_stack.push_back(type);
+    }
+
+    ValidatorType pop()
+    {
+        if (m_stack.size() == last_label().stackHeight && last_label().unreachable)
+            return ValidatorType();
+
+        VALIDATION_ASSERT(m_stack.size() > last_label().stackHeight);
+        auto type = m_stack.back();
+        m_stack.pop_back();
+        return type;
+    }
+
+    ValidatorType expect(Type expected)
+    {
+        auto actual = pop();
+        VALIDATION_ASSERT(actual == expected);
+        return actual;
+    }
+
+    void erase(uint32_t fromBegin, uint32_t fromEnd)
+    {
+        m_stack.erase(m_stack.begin() + fromBegin, m_stack.end() - fromEnd);
+    }
+
+    uint32_t size() const
+    {
+        return static_cast<uint32_t>(m_stack.size());
+    }
+
+    // FIXME: This needs a refactor and probably shouldn't be here
+    ValidatorLabel& last_label()
+    {
+        assert(!labels.empty());
+        return labels[labels.size() - 1];
+    }
+
+    std::vector<ValidatorLabel> labels;
+
+private:
+    std::vector<ValidatorType> m_stack;
+};
 
 Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
     : m_wasmFile(wasmFile)
@@ -68,7 +177,7 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
         VALIDATION_ASSERT(!vector_contains(usedVectorNames, exp.name));
         usedVectorNames.push_back(exp.name);
 
-        switch(exp.type)
+        switch (exp.type)
         {
             case WasmFile::ImportType::Function:
                 VALIDATION_ASSERT(exp.index < m_functions.size());
@@ -83,7 +192,7 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
                 VALIDATION_ASSERT(exp.index < m_tables.size());
                 break;
             default:
-                VALIDATION_ASSERT(false); 
+                VALIDATION_ASSERT(false);
         }
     }
 
@@ -116,7 +225,7 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
 
     for (size_t i = 0; i < wasmFile->functionTypeIndexes.size(); i++)
     {
-        // if (i == 44)
+        // if (i == 68)
         //     asm volatile("int3");
         validate_function(wasmFile->functionTypes[wasmFile->functionTypeIndexes[i]], wasmFile->codeBlocks[i]);
     }
@@ -131,78 +240,67 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
     }
 }
 
-void Validator::validate_function(const WasmFile::FunctionType& type, const WasmFile::Code& code)
+void Validator::validate_function(const WasmFile::FunctionType& functionType, const WasmFile::Code& code)
 {
-    std::vector<ValidatorLabel> labels;
-    labels.push_back(ValidatorLabel {
+    ValidatorValueStack stack;
+    stack.labels.push_back(ValidatorLabel {
         .stackHeight = 0,
-        .returnTypes = type.returns,
-        .paramTypes = type.params,
+        .returnTypes = functionType.returns,
+        .paramTypes = functionType.params,
+        .type = ValidatorLabelType::Entry,
         .unreachable = false });
-
-    std::vector<Type> stack;
-
-    auto expect = [&stack, &labels](Type expected) {
-        assert(labels.size() > 0);
-        if (labels[labels.size() - 1].unreachable)
-            return;
-
-        VALIDATION_ASSERT(stack.size() > labels[labels.size() - 1].stackHeight);
-        VALIDATION_ASSERT(stack.back() == expected);
-        stack.pop_back();
-    };
 
     std::vector<Type> locals;
 
-    for (const auto param : type.params)
+    for (const auto param : functionType.params)
         locals.push_back(param);
 
     for (const auto local : code.locals)
         locals.push_back(local);
 
-    auto validate_unary_operation = [expect, &stack](Type type) {
-        expect(type);
-        stack.push_back(type);
+    auto validate_unary_operation = [&stack](Type type) {
+        stack.expect(type);
+        stack.push(type);
     };
 
-    auto validate_binary_operation = [expect, &stack](Type type) {
-        expect(type);
-        expect(type);
-        stack.push_back(type);
+    auto validate_binary_operation = [&stack](Type type) {
+        stack.expect(type);
+        stack.expect(type);
+        stack.push(type);
     };
 
-    auto validate_test_operation = [expect, &stack](Type type) {
-        expect(type);
-        stack.push_back(Type::i32);
+    auto validate_test_operation = [&stack](Type type) {
+        stack.expect(type);
+        stack.push(Type::i32);
     };
 
-    auto validate_comparison_operation = [expect, &stack](Type type) {
-        expect(type);
-        expect(type);
-        stack.push_back(Type::i32);
+    auto validate_comparison_operation = [&stack](Type type) {
+        stack.expect(type);
+        stack.expect(type);
+        stack.push(Type::i32);
     };
 
-    auto validate_load_operation = [expect, &stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
+    auto validate_load_operation = [&stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
         VALIDATION_ASSERT(memArg.memoryIndex < m_memories);
         VALIDATION_ASSERT((1ull << memArg.align) <= bitWidth / 8);
-        expect(Type::i32);
-        stack.push_back(type);
+        stack.expect(Type::i32);
+        stack.push(type);
     };
 
-    auto validate_store_operation = [expect, &stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
+    auto validate_store_operation = [&stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
         VALIDATION_ASSERT(memArg.memoryIndex < m_memories);
         VALIDATION_ASSERT((1ull << memArg.align) <= bitWidth / 8);
-        expect(type);
-        expect(Type::i32);
+        stack.expect(type);
+        stack.expect(Type::i32);
     };
 
-    // FIXME: All the comparisions of stack size being > 0 are incorrect
     for (const auto& instruction : code.instructions)
     {
         switch (instruction.opcode)
         {
             case Opcode::unreachable:
-                labels[labels.size() - 1].unreachable = true;
+                stack.last_label().unreachable = true;
+                stack.erase(stack.last_label().stackHeight, 0);
                 break;
             case Opcode::nop:
                 break;
@@ -211,241 +309,220 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                 const BlockLoopArguments& arguments = std::get<BlockLoopArguments>(instruction.arguments);
                 const auto& params = arguments.blockType.get_param_types(m_wasmFile);
 
-                // FIXME: This is kinda ugly
-                std::vector<Type> types;
-                for (auto type = params.rbegin(); type != params.rend(); type++)
-                {
-                    VALIDATION_ASSERT(stack.size() > 0);
-                    Type popped = stack.back();
-                    expect(*type);
-                    types.push_back(popped);
-                }
-                std::reverse(types.begin(), types.end());
-                for (const auto type : types)
-                    stack.push_back(type);
+                for (const auto type : std::views::reverse(params))
+                    stack.expect(type);
 
-                labels.push_back(ValidatorLabel {
-                    .stackHeight = static_cast<uint32_t>(stack.size() - params.size()),
+                stack.labels.push_back(ValidatorLabel {
+                    .stackHeight = stack.size(),
                     .returnTypes = arguments.blockType.get_return_types(m_wasmFile),
                     .paramTypes = params,
+                    .type = instruction.opcode == Opcode::loop ? ValidatorLabelType::Loop : ValidatorLabelType::Block,
                     .unreachable = false });
+
+                for (const auto type : params)
+                    stack.push(type);
+
                 break;
             }
             case Opcode::if_: {
                 const IfArguments& arguments = std::get<IfArguments>(instruction.arguments);
                 const auto& params = arguments.blockType.get_param_types(m_wasmFile);
 
-                expect(Type::i32);
+                stack.expect(Type::i32);
 
                 // FIXME: This is duplicate with block
-                std::vector<Type> types;
-                for (auto type = params.rbegin(); type != params.rend(); type++)
-                {
-                    VALIDATION_ASSERT(stack.size() > 0);
-                    Type popped = stack.back();
-                    expect(*type);
-                    types.push_back(popped);
-                }
-                std::reverse(types.begin(), types.end());
-                for (const auto type : types)
-                    stack.push_back(type);
+                for (const auto type : std::views::reverse(params))
+                    stack.expect(type);
 
-                labels.push_back(ValidatorLabel {
-                    .stackHeight = static_cast<uint32_t>(stack.size() - params.size()),
+                stack.labels.push_back(ValidatorLabel {
+                    .stackHeight = stack.size(),
                     .returnTypes = arguments.blockType.get_return_types(m_wasmFile),
                     .paramTypes = params,
+                    .type = ValidatorLabelType::If,
                     .unreachable = false });
+
+                for (const auto type : params)
+                    stack.push(type);
                 break;
             }
             case Opcode::else_: {
-                auto& label = labels[labels.size() - 1];
-                if (!label.unreachable)
-                {
-                    // FIXME: This is kinda ugly
-                    for (auto type = label.returnTypes.rbegin(); type != label.returnTypes.rend(); type++)
-                    {
-                        VALIDATION_ASSERT(stack.size() > 0)
-                        Type popped = stack.back();
-                        VALIDATION_ASSERT(popped == *type);
-                        stack.pop_back();
-                    }
+                auto& label = stack.last_label();
+                VALIDATION_ASSERT(label.type == ValidatorLabelType::If);
 
-                    VALIDATION_ASSERT(stack.size() == label.stackHeight);
-                }
-                else
-                {
-                    stack.erase(stack.begin() + label.stackHeight, stack.end());
-                }
-                label.unreachable = false;
+                for (const auto type : std::views::reverse(label.returnTypes))
+                    stack.expect(type);
+
+                VALIDATION_ASSERT(stack.size() == label.stackHeight);
+
                 for (const auto type : label.paramTypes)
-                    stack.push_back(type);
+                    stack.push(type);
+
+                label.type = ValidatorLabelType::IfAfterElse;
+                label.unreachable = false;
                 break;
             }
             case Opcode::end: {
-                VALIDATION_ASSERT(labels.size() > 0)
+                auto& label = stack.last_label();
 
-                auto& label = labels[labels.size() - 1];
-                if (!label.unreachable)
-                {
-                    // FIXME: This is kinda ugly and a duplicate
-                    std::vector<Type> types;
-                    for (auto type = label.returnTypes.rbegin(); type != label.returnTypes.rend(); type++)
-                    {
-                        VALIDATION_ASSERT(stack.size() > 0);
-                        Type popped = stack.back();
-                        VALIDATION_ASSERT(popped == *type);
-                        stack.pop_back();
-                        types.push_back(popped);
-                    }
+                if (label.type == ValidatorLabelType::If)
+                    VALIDATION_ASSERT(label.returnTypes.size() == label.paramTypes.size());
 
-                    VALIDATION_ASSERT(stack.size() == label.stackHeight);
+                for (const auto type : std::views::reverse(label.returnTypes))
+                    stack.expect(type);
 
-                    std::reverse(types.begin(), types.end());
-                    for (const auto type : types)
-                        stack.push_back(type);
-                }
-                else
-                {
-                    stack.erase(stack.begin() + label.stackHeight, stack.end());
-                    for (const auto type : label.returnTypes)
-                        stack.push_back(type);
-                }
-                labels.pop_back();
+                VALIDATION_ASSERT(stack.size() == label.stackHeight);
+
+                for (const auto type : label.returnTypes)
+                    stack.push(type);
+
+                stack.labels.pop_back();
                 break;
             }
             case Opcode::br: {
-                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) + 1 <= labels.size());
-                const auto& label = labels[labels.size() - std::get<uint32_t>(instruction.arguments) - 1];
-                for (auto type = label.returnTypes.rbegin(); type != label.returnTypes.rend(); type++)
-                    expect(*type);
-                labels[labels.size() - 1].unreachable = true;
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) + 1 <= stack.labels.size());
+                const auto& label = stack.labels[stack.labels.size() - std::get<uint32_t>(instruction.arguments) - 1];
+
+                if (label.type != ValidatorLabelType::Loop)
+                    for (const auto type : std::views::reverse(label.returnTypes))
+                        stack.expect(type);
+
+                stack.last_label().unreachable = true;
+                stack.erase(stack.last_label().stackHeight, 0);
                 break;
             }
             case Opcode::br_if: {
-                expect(Type::i32);
-                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) + 1 <= labels.size());
-                const auto& label = labels[labels.size() - std::get<uint32_t>(instruction.arguments) - 1];
-                VALIDATION_ASSERT(stack.size() >= label.returnTypes.size())
-                for (size_t i = 0; i < label.returnTypes.size(); i++)
-                    VALIDATION_ASSERT(stack[stack.size() - i - 1] == label.returnTypes[label.returnTypes.size() - i - 1]);
+                VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) + 1 <= stack.labels.size());
+                const auto& label = stack.labels[stack.labels.size() - std::get<uint32_t>(instruction.arguments) - 1];
+
+                stack.expect(Type::i32);
+
+                if (label.type != ValidatorLabelType::Loop)
+                {
+                    std::vector<ValidatorType> types;
+                    for (const auto type : std::views::reverse(label.returnTypes))
+                        types.push_back(stack.expect(type));
+
+                    for (const auto type : types)
+                        stack.push(type);
+                }
+
                 break;
             }
             case Opcode::br_table: {
                 const auto& arguments = std::get<BranchTableArguments>(instruction.arguments);
-                expect(Type::i32);
-                labels[labels.size() - 1].unreachable = true;
-                VALIDATION_ASSERT(arguments.defaultLabel <= labels.size());
-                for (const auto& label : arguments.labels)
-                    VALIDATION_ASSERT(label <= labels.size());
+
+                stack.expect(Type::i32);
+
+                VALIDATION_ASSERT(arguments.defaultLabel + 1 <= stack.labels.size());
+                for (const auto& labelIndex : arguments.labels)
+                    VALIDATION_ASSERT(labelIndex + 1 <= stack.labels.size());
+
+                stack.last_label().unreachable = true;
+                stack.erase(stack.last_label().stackHeight, 0);
                 break;
             }
             case Opcode::return_:
-                for (auto t = type.returns.rbegin(); t != type.returns.rend(); t++)
-                    expect(*t);
-                labels[labels.size() - 1].unreachable = true;
+                for (const auto type : std::views::reverse(functionType.returns))
+                    stack.expect(type);
+
+                stack.last_label().unreachable = true;
+                stack.erase(stack.last_label().stackHeight, 0);
                 break;
             case Opcode::call: {
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
+
                 const auto& calleeType = m_wasmFile->functionTypes[m_functions[std::get<uint32_t>(instruction.arguments)]];
-                for (auto type = calleeType.params.rbegin(); type != calleeType.params.rend(); type++)
-                    expect(*type);
+                for (const auto type : std::views::reverse(calleeType.params))
+                    stack.expect(type);
 
                 for (const auto returned : calleeType.returns)
-                    stack.push_back(returned);
+                    stack.push(returned);
                 break;
             }
             case Opcode::call_indirect: {
                 const CallIndirectArguments& arguments = std::get<CallIndirectArguments>(instruction.arguments);
 
-                expect(Type::i32);
+                stack.expect(Type::i32);
 
                 VALIDATION_ASSERT(arguments.tableIndex < m_tables.size());
                 VALIDATION_ASSERT(arguments.typeIndex < m_wasmFile->functionTypes.size());
                 VALIDATION_ASSERT(m_tables[arguments.tableIndex] == Type::funcref);
 
                 const auto& calleeType = m_wasmFile->functionTypes[arguments.typeIndex];
-                for (auto type = calleeType.params.rbegin(); type != calleeType.params.rend(); type++)
-                    expect(*type);
+                for (const auto type : std::views::reverse(calleeType.params))
+                    stack.expect(type);
 
                 for (const auto returned : calleeType.returns)
-                    stack.push_back(returned);
+                    stack.push(returned);
                 break;
             }
             case Opcode::drop:
-                VALIDATION_ASSERT(stack.size() > 0)
-                stack.pop_back();
+                stack.pop();
                 break;
             case Opcode::select_: {
-                // FIXME: This is a mess
-                if (!labels[labels.size() - 1].unreachable)
-                {
-                    expect(Type::i32);
-                    VALIDATION_ASSERT(stack.size() >= 2);
-                    Type a = stack.back();
-                    stack.pop_back();
-                    Type b = stack.back();
-                    stack.pop_back();
-                    stack.push_back(a);
-                    VALIDATION_ASSERT(a == b);
-                    VALIDATION_ASSERT(a == Type::i32 || a == Type::i64 || a == Type::f32 || a == Type::f64 || a == Type::v128);
-                }
+                stack.expect(Type::i32);
+
+                auto a = stack.pop();
+                auto b = stack.pop();
+                stack.push(a.known() ? a : b);
+
+                VALIDATION_ASSERT(a == b);
+                VALIDATION_ASSERT(a == Type::i32 || a == Type::i64 || a == Type::f32 || a == Type::f64 || a == Type::v128);
                 break;
             }
             case Opcode::select_typed: {
-                // FIXME: This is duplicated with select and also a mess
-                if (!labels[labels.size() - 1].unreachable)
-                {
-                    const auto& arguments = std::get<std::vector<uint8_t>>(instruction.arguments);
-                    VALIDATION_ASSERT(arguments.size() == 1);
-                    VALIDATION_ASSERT(is_valid_type((Type)arguments[0]));
-                    expect(Type::i32);
-                    VALIDATION_ASSERT(stack.size() >= 2);
-                    Type a = stack.back();
-                    stack.pop_back();
-                    Type b = stack.back();
-                    stack.pop_back();
-                    stack.push_back(a);
-                    VALIDATION_ASSERT(a == (Type)arguments[0]);
-                    VALIDATION_ASSERT(b == (Type)arguments[0]);
-                }
+                // FIXME: This is duplicated with select
+                const auto& arguments = std::get<std::vector<uint8_t>>(instruction.arguments);
+
+                VALIDATION_ASSERT(arguments.size() == 1);
+                VALIDATION_ASSERT(is_valid_type((Type)arguments[0]));
+
+                stack.expect(Type::i32);
+
+                auto a = stack.pop();
+                auto b = stack.pop();
+                stack.push((Type)arguments[0]);
+
+                VALIDATION_ASSERT(a == (Type)arguments[0]);
+                VALIDATION_ASSERT(b == (Type)arguments[0]);
                 break;
             }
             case Opcode::local_get:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < locals.size());
-                stack.push_back(locals[std::get<uint32_t>(instruction.arguments)]);
+                stack.push(locals[std::get<uint32_t>(instruction.arguments)]);
                 break;
             case Opcode::local_set:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < locals.size());
-                expect(locals[std::get<uint32_t>(instruction.arguments)]);
+                stack.expect(locals[std::get<uint32_t>(instruction.arguments)]);
                 break;
             case Opcode::local_tee:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < locals.size());
-                expect(locals[std::get<uint32_t>(instruction.arguments)]);
-                stack.push_back(locals[std::get<uint32_t>(instruction.arguments)]);
+                stack.expect(locals[std::get<uint32_t>(instruction.arguments)]);
+                stack.push(locals[std::get<uint32_t>(instruction.arguments)]);
                 break;
             case Opcode::global_get: {
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_globals.size());
                 const auto& global = m_globals[std::get<uint32_t>(instruction.arguments)];
-                stack.push_back(global.first);
+                stack.push(global.first);
                 break;
             }
             case Opcode::global_set: {
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_globals.size());
                 const auto& global = m_globals[std::get<uint32_t>(instruction.arguments)];
                 VALIDATION_ASSERT(global.second == WasmFile::GlobalMutability::Variable);
-                expect(global.first);
+                stack.expect(global.first);
                 break;
             }
             case Opcode::table_get: {
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
-                expect(Type::i32);
-                stack.push_back(m_tables[std::get<uint32_t>(instruction.arguments)]);
+                stack.expect(Type::i32);
+                stack.push(m_tables[std::get<uint32_t>(instruction.arguments)]);
                 break;
             }
             case Opcode::table_set: {
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
-                expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
-                expect(Type::i32);
+                stack.expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
+                stack.expect(Type::i32);
                 break;
             }
             case Opcode::i32_load:
@@ -509,24 +586,24 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                 break;
             case Opcode::memory_size:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_memories);
-                stack.push_back(Type::i32);
+                stack.push(Type::i32);
                 break;
             case Opcode::memory_grow:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_memories);
-                expect(Type::i32);
-                stack.push_back(Type::i32);
+                stack.expect(Type::i32);
+                stack.push(Type::i32);
                 break;
             case Opcode::i32_const:
-                stack.push_back(Type::i32);
+                stack.push(Type::i32);
                 break;
             case Opcode::i64_const:
-                stack.push_back(Type::i64);
+                stack.push(Type::i64);
                 break;
             case Opcode::f32_const:
-                stack.push_back(Type::f32);
+                stack.push(Type::f32);
                 break;
             case Opcode::f64_const:
-                stack.push_back(Type::f64);
+                stack.push(Type::f64);
                 break;
             case Opcode::i32_eqz:
                 validate_test_operation(Type::i32);
@@ -660,125 +737,119 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                 validate_binary_operation(Type::f64);
                 break;
             case Opcode::i32_wrap_i64:
-                expect(Type::i64);
-                stack.push_back(Type::i32);
+                stack.expect(Type::i64);
+                stack.push(Type::i32);
                 break;
             case Opcode::i32_trunc_f32_s:
             case Opcode::i32_trunc_f32_u:
-                expect(Type::f32);
-                stack.push_back(Type::i32);
+                stack.expect(Type::f32);
+                stack.push(Type::i32);
                 break;
             case Opcode::i32_trunc_f64_s:
             case Opcode::i32_trunc_f64_u:
-                expect(Type::f64);
-                stack.push_back(Type::i32);
+                stack.expect(Type::f64);
+                stack.push(Type::i32);
                 break;
             case Opcode::i64_extend_i32_s:
             case Opcode::i64_extend_i32_u:
-                expect(Type::i32);
-                stack.push_back(Type::i64);
+                stack.expect(Type::i32);
+                stack.push(Type::i64);
                 break;
             case Opcode::i64_trunc_f32_s:
             case Opcode::i64_trunc_f32_u:
-                expect(Type::f32);
-                stack.push_back(Type::i64);
+                stack.expect(Type::f32);
+                stack.push(Type::i64);
                 break;
             case Opcode::i64_trunc_f64_s:
             case Opcode::i64_trunc_f64_u:
-                expect(Type::f64);
-                stack.push_back(Type::i64);
+                stack.expect(Type::f64);
+                stack.push(Type::i64);
                 break;
             case Opcode::f32_convert_i32_s:
             case Opcode::f32_convert_i32_u:
-                expect(Type::i32);
-                stack.push_back(Type::f32);
+                stack.expect(Type::i32);
+                stack.push(Type::f32);
                 break;
             case Opcode::f32_convert_i64_s:
             case Opcode::f32_convert_i64_u:
-                expect(Type::i64);
-                stack.push_back(Type::f32);
+                stack.expect(Type::i64);
+                stack.push(Type::f32);
                 break;
             case Opcode::f32_demote_f64:
-                expect(Type::f64);
-                stack.push_back(Type::f32);
+                stack.expect(Type::f64);
+                stack.push(Type::f32);
                 break;
             case Opcode::f64_convert_i32_s:
             case Opcode::f64_convert_i32_u:
-                expect(Type::i32);
-                stack.push_back(Type::f64);
+                stack.expect(Type::i32);
+                stack.push(Type::f64);
                 break;
             case Opcode::f64_convert_i64_s:
             case Opcode::f64_convert_i64_u:
-                expect(Type::i64);
-                stack.push_back(Type::f64);
+                stack.expect(Type::i64);
+                stack.push(Type::f64);
                 break;
             case Opcode::f64_promote_f32:
-                expect(Type::f32);
-                stack.push_back(Type::f64);
+                stack.expect(Type::f32);
+                stack.push(Type::f64);
                 break;
             case Opcode::i32_reinterpret_f32:
-                expect(Type::f32);
-                stack.push_back(Type::i32);
+                stack.expect(Type::f32);
+                stack.push(Type::i32);
                 break;
             case Opcode::i64_reinterpret_f64:
-                expect(Type::f64);
-                stack.push_back(Type::i64);
+                stack.expect(Type::f64);
+                stack.push(Type::i64);
                 break;
             case Opcode::f32_reinterpret_i32:
-                expect(Type::i32);
-                stack.push_back(Type::f32);
+                stack.expect(Type::i32);
+                stack.push(Type::f32);
                 break;
             case Opcode::f64_reinterpret_i64:
-                expect(Type::i64);
-                stack.push_back(Type::f64);
+                stack.expect(Type::i64);
+                stack.push(Type::f64);
                 break;
             case Opcode::ref_null:
-                stack.push_back(std::get<Type>(instruction.arguments));
+                stack.push(std::get<Type>(instruction.arguments));
                 break;
             case Opcode::ref_is_null: {
-                if (!labels[labels.size() - 1].unreachable)
-                {
-                    VALIDATION_ASSERT(stack.size() > 0);
-                    Type a = stack.back();
-                    stack.pop_back();
-                    VALIDATION_ASSERT(is_reference_type(a));
-                }
-                stack.push_back(Type::i32);
+                VALIDATION_ASSERT(stack.pop().is_reference_type());
+                stack.push(Type::i32);
                 break;
             }
             case Opcode::ref_func:
                 // TODO: Check if the function was declared
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
-                stack.push_back(Type::funcref);
+                stack.push(Type::funcref);
                 break;
             case Opcode::i32_trunc_sat_f32_s:
             case Opcode::i32_trunc_sat_f32_u:
-                expect(Type::f32);
-                stack.push_back(Type::i32);
+                stack.expect(Type::f32);
+                stack.push(Type::i32);
                 break;
             case Opcode::i32_trunc_sat_f64_s:
             case Opcode::i32_trunc_sat_f64_u:
-                expect(Type::f64);
-                stack.push_back(Type::i32);
+                stack.expect(Type::f64);
+                stack.push(Type::i32);
                 break;
             case Opcode::i64_trunc_sat_f32_s:
             case Opcode::i64_trunc_sat_f32_u:
-                expect(Type::f32);
-                stack.push_back(Type::i64);
+                stack.expect(Type::f32);
+                stack.push(Type::i64);
                 break;
             case Opcode::i64_trunc_sat_f64_s:
             case Opcode::i64_trunc_sat_f64_u:
-                expect(Type::f64);
-                stack.push_back(Type::i64);
+                stack.expect(Type::f64);
+                stack.push(Type::i64);
                 break;
             case Opcode::memory_init: {
                 VALIDATION_ASSERT(m_wasmFile->dataCount);
                 const auto& arguments = std::get<MemoryInitArguments>(instruction.arguments);
                 VALIDATION_ASSERT(arguments.memoryIndex < m_memories);
                 VALIDATION_ASSERT(arguments.dataIndex < m_wasmFile->dataBlocks.size());
-                expect(Type::i32);
-                expect(Type::i32);
-                expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
                 break;
             }
             case Opcode::data_drop:
@@ -789,25 +860,25 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                 const auto& arguments = std::get<MemoryCopyArguments>(instruction.arguments);
                 VALIDATION_ASSERT(arguments.destination < m_memories);
                 VALIDATION_ASSERT(arguments.source < m_memories);
-                expect(Type::i32);
-                expect(Type::i32);
-                expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
                 break;
             }
             case Opcode::memory_fill:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_memories);
-                expect(Type::i32);
-                expect(Type::i32);
-                expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
                 break;
             case Opcode::table_init: {
                 const auto& arguments = std::get<TableInitArguments>(instruction.arguments);
                 VALIDATION_ASSERT(arguments.tableIndex < m_tables.size());
                 VALIDATION_ASSERT(arguments.elementIndex < m_wasmFile->elements.size());
                 VALIDATION_ASSERT(m_tables[arguments.tableIndex] == m_wasmFile->elements[arguments.elementIndex].valueType);
-                expect(Type::i32);
-                expect(Type::i32);
-                expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
                 break;
             }
             case Opcode::elem_drop:
@@ -818,37 +889,48 @@ void Validator::validate_function(const WasmFile::FunctionType& type, const Wasm
                 VALIDATION_ASSERT(arguments.destination < m_tables.size());
                 VALIDATION_ASSERT(arguments.source < m_tables.size());
                 VALIDATION_ASSERT(m_tables[arguments.destination] == m_tables[arguments.source]);
-                expect(Type::i32);
-                expect(Type::i32);
-                expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(Type::i32);
                 break;
             }
             case Opcode::table_grow:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
-                expect(Type::i32);
-                expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
-                stack.push_back(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
+                stack.push(Type::i32);
                 break;
             case Opcode::table_size:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
-                stack.push_back(Type::i32);
+                stack.push(Type::i32);
                 break;
             case Opcode::table_fill:
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_tables.size());
-                expect(Type::i32);
-                expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
-                expect(Type::i32);
+                stack.expect(Type::i32);
+                stack.expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
+                stack.expect(Type::i32);
                 break;
             default:
                 std::println(std::cerr, "Error: No validation for opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
                 VALIDATION_ASSERT(false);
         }
     }
+
+    // for (const auto type : std::views::reverse(functionType.returns))
+    //     stack.expect(type);
+
+    // VALIDATION_ASSERT(stack.size() == 0);
 }
 
 void Validator::validate_constant_expression(const std::vector<Instruction>& instructions, Type expectedReturnType, bool globalRestrictions)
 {
-    std::vector<Type> stack;
+    ValidatorValueStack stack;
+    stack.labels.push_back(ValidatorLabel {
+        .stackHeight = 0,
+        .returnTypes = { expectedReturnType },
+        .paramTypes = {},
+        .type = ValidatorLabelType::Entry,
+        .unreachable = false });
 
     for (size_t ip = 0; ip < instructions.size(); ip++)
     {
@@ -864,37 +946,37 @@ void Validator::validate_constant_expression(const std::vector<Instruction>& ins
                     VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_imported_global_count);
                 const auto& global = m_globals[std::get<uint32_t>(instruction.arguments)];
                 VALIDATION_ASSERT(global.second == WasmFile::GlobalMutability::Constant);
-                stack.push_back(global.first);
+                stack.push(global.first);
                 break;
             }
             case Opcode::i32_const:
-                stack.push_back(Type::i32);
+                stack.push(Type::i32);
                 break;
             case Opcode::i64_const:
-                stack.push_back(Type::i64);
+                stack.push(Type::i64);
                 break;
             case Opcode::f32_const:
-                stack.push_back(Type::f32);
+                stack.push(Type::f32);
                 break;
             case Opcode::f64_const:
-                stack.push_back(Type::f64);
+                stack.push(Type::f64);
                 break;
             case Opcode::ref_null:
-                stack.push_back(std::get<Type>(instruction.arguments));
+                stack.push(std::get<Type>(instruction.arguments));
                 break;
             case Opcode::ref_func:
                 // TODO: Check if the function was declared
                 VALIDATION_ASSERT(std::get<uint32_t>(instruction.arguments) < m_functions.size());
-                stack.push_back(Type::funcref);
+                stack.push(Type::funcref);
                 break;
             case Opcode::v128_const:
-                stack.push_back(Type::v128);
+                stack.push(Type::v128);
                 break;
             default:
                 VALIDATION_ASSERT(false);
         }
     }
 
-    VALIDATION_ASSERT(stack.size() == 1);
-    VALIDATION_ASSERT(stack.back() == expectedReturnType);
+    stack.expect(expectedReturnType);
+    VALIDATION_ASSERT(stack.size() == 0);
 }

@@ -10,8 +10,15 @@ Memory::Memory(const WasmFile::Memory& memory)
     memset(data, 0, size * WASM_PAGE_SIZE);
 }
 
-Global::Global(Value value)
-    : value(value)
+Table::Table(Type type)
+    : type(type)
+{
+}
+
+Global::Global(Type type, WasmFile::GlobalMutability mut, Value value)
+    : type(type)
+    , mut(mut)
+    , value(value)
 {
 }
 

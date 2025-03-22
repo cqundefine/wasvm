@@ -2,6 +2,7 @@
 #include <WasmFile.h>
 #include <cassert>
 #include <cstdio>
+#include <iostream>
 #include <utility>
 
 Type read_type_from_stream(Stream& stream)
