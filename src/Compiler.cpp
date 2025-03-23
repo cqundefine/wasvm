@@ -58,7 +58,7 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
                 break;
             case Opcode::block:
             case Opcode::loop: {
-                const BlockLoopArguments& arguments = std::get<BlockLoopArguments>(instruction.arguments);
+                const auto& arguments = instruction.get_arguments<BlockLoopArguments>();
 
                 // TODO: continuation = rip
 
@@ -78,14 +78,14 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
             case Opcode::br:
 
             case Opcode::local_get:
-                get_local(std::get<uint32_t>(instruction.arguments));
+                get_local(instruction.get_arguments<uint32_t>());
                 break;
             case Opcode::i32_const:
-                m_jit.mov32(JIT::Operand::Register(GPR0), JIT::Operand::Immediate(std::get<uint32_t>(instruction.arguments)));
+                m_jit.mov32(JIT::Operand::Register(GPR0), JIT::Operand::Immediate(instruction.get_arguments<uint32_t>()));
                 push_value(Value::Type::UInt32, JIT::Operand::Register(GPR0));
                 break;
             case Opcode::i64_const:
-                m_jit.mov64(JIT::Operand::Register(GPR0), JIT::Operand::Immediate(std::get<uint64_t>(instruction.arguments)));
+                m_jit.mov64(JIT::Operand::Register(GPR0), JIT::Operand::Immediate(instruction.get_arguments<uint64_t>()));
                 push_value(Value::Type::UInt64, JIT::Operand::Register(GPR0));
                 break;
             case Opcode::i32_add:

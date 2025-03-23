@@ -72,6 +72,18 @@ struct Instruction
 {
     Opcode opcode;
     std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, MemoryInitArguments, MemoryCopyArguments, TableInitArguments, TableCopyArguments, LoadStoreLaneArguments, std::vector<uint8_t>, WasmFile::MemArg, Type, Label, uint8_t, uint32_t, uint64_t, float, double, uint128_t, uint8x16_t> arguments;
+
+    template <typename T>
+    T& get_arguments()
+    {
+        return std::get<T>(arguments);
+    }
+
+    template <typename T>
+    const T& get_arguments() const
+    {
+        return std::get<T>(arguments);
+    }
 };
 
 std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile);

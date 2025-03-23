@@ -15,6 +15,21 @@ enum class Type
     empty = 0x40,
 };
 
+template <typename T>
+inline constexpr Type type_from_cpp_type = Type::empty;
+
+template <>
+inline constexpr Type type_from_cpp_type<uint32_t> = Type::i32;
+
+template <>
+inline constexpr Type type_from_cpp_type<uint64_t> = Type::i64;
+
+template <>
+inline constexpr Type type_from_cpp_type<float> = Type::f32;
+
+template <>
+inline constexpr Type type_from_cpp_type<double> = Type::f64;
+
 Type read_type_from_stream(Stream&);
 bool is_valid_type(Type type);
 Value default_value_for_type(Type type);

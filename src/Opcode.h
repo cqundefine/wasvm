@@ -706,3 +706,145 @@ enum class MultiByteFD
     f64x2_convert_low_i32x4_s = 254,
     f64x2_convert_low_i32x4_u = 255,
 };
+
+// X(opcode, operation, type, resultType)
+#define ENUMERATE_UNARY_OPERATIONS(X)                               \
+    X(i32_eqz, eqz, uint32_t, uint32_t)                             \
+    X(i64_eqz, eqz, uint64_t, uint32_t)                             \
+    X(i32_clz, clz, uint32_t, uint32_t)                             \
+    X(i32_ctz, ctz, uint32_t, uint32_t)                             \
+    X(i32_popcnt, popcnt, uint32_t, uint32_t)                       \
+    X(i64_clz, clz, uint64_t, uint64_t)                             \
+    X(i64_ctz, ctz, uint64_t, uint64_t)                             \
+    X(i64_popcnt, popcnt, uint64_t, uint64_t)                       \
+    X(f32_abs, abs, float, float)                                   \
+    X(f32_neg, neg, float, float)                                   \
+    X(f32_ceil, ceil, float, float)                                 \
+    X(f32_floor, floor, float, float)                               \
+    X(f32_trunc, trunc, float, float)                               \
+    X(f32_nearest, nearest, float, float)                           \
+    X(f32_sqrt, sqrt, float, float)                                 \
+    X(f64_abs, abs, double, double)                                 \
+    X(f64_neg, neg, double, double)                                 \
+    X(f64_ceil, ceil, double, double)                               \
+    X(f64_floor, floor, double, double)                             \
+    X(f64_trunc, trunc, double, double)                             \
+    X(f64_nearest, nearest, double, double)                         \
+    X(f64_sqrt, sqrt, double, double)                               \
+    X(i32_wrap_i64, convert_u<uint32_t>, uint64_t, uint32_t)        \
+    X(i32_trunc_f32_s, trunc<int32_t>, float, int32_t)              \
+    X(i32_trunc_f32_u, trunc<uint32_t>, float, uint32_t)            \
+    X(i32_trunc_f64_s, trunc<int32_t>, double, int32_t)             \
+    X(i32_trunc_f64_u, trunc<uint32_t>, double, uint32_t)           \
+    X(i64_extend_i32_s, convert_s<uint64_t>, uint32_t, uint64_t)    \
+    X(i64_extend_i32_u, convert_u<uint64_t>, uint32_t, uint64_t)    \
+    X(i64_trunc_f32_s, trunc<int64_t>, float, int64_t)              \
+    X(i64_trunc_f32_u, trunc<uint64_t>, float, uint64_t)            \
+    X(i64_trunc_f64_s, trunc<int64_t>, double, int64_t)             \
+    X(i64_trunc_f64_u, trunc<uint64_t>, double, uint64_t)           \
+    X(f32_convert_i32_s, convert_s<float>, uint32_t, float)         \
+    X(f32_convert_i32_u, convert_u<float>, uint32_t, float)         \
+    X(f32_convert_i64_s, convert_s<float>, uint64_t, float)         \
+    X(f32_convert_i64_u, convert_u<float>, uint64_t, float)         \
+    X(f32_demote_f64, convert_u<float>, double, float)              \
+    X(f64_convert_i32_s, convert_s<double>, uint32_t, double)       \
+    X(f64_convert_i32_u, convert_u<double>, uint32_t, double)       \
+    X(f64_convert_i64_s, convert_s<double>, uint64_t, double)       \
+    X(f64_convert_i64_u, convert_u<double>, uint64_t, double)       \
+    X(f64_promote_f32, convert_u<double>, float, double)            \
+    X(i32_reinterpret_f32, reinterpret<uint32_t>, float, uint32_t)  \
+    X(i64_reinterpret_f64, reinterpret<uint64_t>, double, uint64_t) \
+    X(f32_reinterpret_i32, reinterpret<float>, uint32_t, float)     \
+    X(f64_reinterpret_i64, reinterpret<double>, uint64_t, double)   \
+    X(i32_extend8_s, extend<uint8_t>, uint32_t, uint32_t)           \
+    X(i32_extend16_s, extend<uint16_t>, uint32_t, uint32_t)         \
+    X(i64_extend8_s, extend<uint8_t>, uint64_t, uint64_t)           \
+    X(i64_extend16_s, extend<uint16_t>, uint64_t, uint64_t)         \
+    X(i64_extend32_s, extend<uint32_t>, uint64_t, uint64_t)         \
+    X(i32_trunc_sat_f32_s, trunc_sat<int32_t>, float, int32_t)      \
+    X(i32_trunc_sat_f32_u, trunc_sat<uint32_t>, float, uint32_t)    \
+    X(i32_trunc_sat_f64_s, trunc_sat<int32_t>, double, int32_t)     \
+    X(i32_trunc_sat_f64_u, trunc_sat<uint32_t>, double, uint32_t)   \
+    X(i64_trunc_sat_f32_s, trunc_sat<int64_t>, float, int64_t)      \
+    X(i64_trunc_sat_f32_u, trunc_sat<uint64_t>, float, uint64_t)    \
+    X(i64_trunc_sat_f64_s, trunc_sat<int64_t>, double, int64_t)     \
+    X(i64_trunc_sat_f64_u, trunc_sat<uint64_t>, double, uint64_t)
+
+// X(opcode, operation, lhsType, rhsType, resultType)
+#define ENUMERATE_BINARY_OPERATIONS(X)              \
+    X(i32_eq, eq, uint32_t, int32_t, uint32_t)      \
+    X(i32_ne, ne, uint32_t, int32_t, uint32_t)      \
+    X(i32_lt_s, lt, int32_t, int32_t, uint32_t)     \
+    X(i32_lt_u, lt, uint32_t, int32_t, uint32_t)    \
+    X(i32_gt_s, gt, int32_t, int32_t, uint32_t)     \
+    X(i32_gt_u, gt, uint32_t, int32_t, uint32_t)    \
+    X(i32_le_s, le, int32_t, int32_t, uint32_t)     \
+    X(i32_le_u, le, uint32_t, int32_t, uint32_t)    \
+    X(i32_ge_s, ge, int32_t, int32_t, uint32_t)     \
+    X(i32_ge_u, ge, uint32_t, int32_t, uint32_t)    \
+    X(i64_eq, eq, uint64_t, int64_t, uint32_t)      \
+    X(i64_ne, ne, uint64_t, int64_t, uint32_t)      \
+    X(i64_lt_s, lt, int64_t, int64_t, uint32_t)     \
+    X(i64_lt_u, lt, uint64_t, int64_t, uint32_t)    \
+    X(i64_gt_s, gt, int64_t, int64_t, uint32_t)     \
+    X(i64_gt_u, gt, uint64_t, int64_t, uint32_t)    \
+    X(i64_le_s, le, int64_t, int64_t, uint32_t)     \
+    X(i64_le_u, le, uint64_t, int64_t, uint32_t)    \
+    X(i64_ge_s, ge, int64_t, int64_t, uint32_t)     \
+    X(i64_ge_u, ge, uint64_t, int64_t, uint32_t)    \
+    X(f32_eq, eq, float, float, uint32_t)           \
+    X(f32_ne, ne, float, float, uint32_t)           \
+    X(f32_lt, lt, float, float, uint32_t)           \
+    X(f32_gt, gt, float, float, uint32_t)           \
+    X(f32_le, le, float, float, uint32_t)           \
+    X(f32_ge, ge, float, float, uint32_t)           \
+    X(f64_eq, eq, double, double, uint32_t)         \
+    X(f64_ne, ne, double, double, uint32_t)         \
+    X(f64_lt, lt, double, double, uint32_t)         \
+    X(f64_gt, gt, double, double, uint32_t)         \
+    X(f64_le, le, double, double, uint32_t)         \
+    X(f64_ge, ge, double, double, uint32_t)         \
+    X(i32_add, add, uint32_t, int32_t, uint32_t)    \
+    X(i32_sub, sub, uint32_t, int32_t, uint32_t)    \
+    X(i32_mul, mul, uint32_t, int32_t, uint32_t)    \
+    X(i32_div_s, div, int32_t, int32_t, int32_t)    \
+    X(i32_div_u, div, uint32_t, int32_t, uint32_t)  \
+    X(i32_rem_s, rem, int32_t, int32_t, int32_t)    \
+    X(i32_rem_u, rem, uint32_t, int32_t, uint32_t)  \
+    X(i32_and, and, uint32_t, int32_t, uint32_t)    \
+    X(i32_or, or, uint32_t, int32_t, uint32_t)      \
+    X(i32_xor, xor, uint32_t, int32_t, uint32_t)    \
+    X(i32_shl, shl, uint32_t, int32_t, uint32_t)    \
+    X(i32_shr_s, shr, int32_t, int32_t, int32_t)    \
+    X(i32_shr_u, shr, uint32_t, int32_t, uint32_t)  \
+    X(i32_rotl, rotl, uint32_t, int32_t, uint32_t)  \
+    X(i32_rotr, rotr, uint32_t, int32_t, uint32_t)  \
+    X(i64_add, add, uint64_t, int64_t, uint64_t)    \
+    X(i64_sub, sub, uint64_t, int64_t, uint64_t)    \
+    X(i64_mul, mul, uint64_t, int64_t, uint64_t)    \
+    X(i64_div_s, div, int64_t, int64_t, int64_t)    \
+    X(i64_div_u, div, uint64_t, int64_t, uint64_t)  \
+    X(i64_rem_s, rem, int64_t, int64_t, int64_t)    \
+    X(i64_rem_u, rem, uint64_t, int64_t, uint64_t)  \
+    X(i64_and, and, uint64_t, int64_t, uint64_t)    \
+    X(i64_or, or, uint64_t, int64_t, uint64_t)      \
+    X(i64_xor, xor, uint64_t, int64_t, uint64_t)    \
+    X(i64_shl, shl, uint64_t, int64_t, uint64_t)    \
+    X(i64_shr_s, shr, int64_t, int64_t, int64_t)    \
+    X(i64_shr_u, shr, uint64_t, int64_t, uint64_t)  \
+    X(i64_rotl, rotl, uint64_t, uint64_t, uint64_t) \
+    X(i64_rotr, rotr, uint64_t, uint64_t, uint64_t) \
+    X(f32_add, add, float, float, float)            \
+    X(f32_sub, sub, float, float, float)            \
+    X(f32_mul, mul, float, float, float)            \
+    X(f32_div, div, float, float, float)            \
+    X(f32_min, min, float, float, float)            \
+    X(f32_max, max, float, float, float)            \
+    X(f32_copysign, copysign, float, float, float)  \
+    X(f64_add, add, double, double, double)         \
+    X(f64_sub, sub, double, double, double)         \
+    X(f64_mul, mul, double, double, double)         \
+    X(f64_div, div, double, double, double)         \
+    X(f64_min, min, double, double, double)         \
+    X(f64_max, max, double, double, double)         \
+    X(f64_copysign, copysign, double, double, double)

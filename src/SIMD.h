@@ -43,10 +43,10 @@ concept IsVector = requires(T a) {
     { a + 1 };
 };
 
-template <typename T>
+template <IsVector T>
 using VectorElement = decltype(std::declval<T>()[0]);
 
-template <typename T>
+template <IsVector T>
 T vector_broadcast(VectorElement<T> value)
 {
     T result = {};

@@ -6,6 +6,7 @@
 #include <bit>
 #include <cassert>
 #include <cmath>
+#include <type_traits>
 
 #define GENERIC_BINARY_OPERATION_OPERATOR(name, op)         \
     template <typename LhsType, typename RhsType>           \
@@ -192,7 +193,7 @@ Value operation_eqz(T a)
 template <typename TruncatedType, typename T>
 Value operation_trunc(T a)
 {
-    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "run_truncate_instruction is meant for floating point to integer conversions");
+    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "operation_trunc is meant for floating point to integer conversions");
 
     if (std::isnan(a) || std::isinf(a))
         throw Trap();
@@ -211,7 +212,7 @@ Value operation_trunc(T a)
 template <typename TruncatedType, typename T>
 Value operation_trunc_sat(T a)
 {
-    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "run_truncate_instruction is meant for floating point to integer conversions");
+    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "operation_trunc_sat is meant for floating point to integer conversions");
 
     if (std::isnan(a))
         return (ToValueType<TruncatedType>)0;
@@ -231,6 +232,50 @@ Value operation_trunc_sat(T a)
         return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().max();
 
     return (ToValueType<TruncatedType>)(TruncatedType)a;
+}
+
+template <typename ConvertedType, bool SignedResult, typename T>
+Value operation_convert(T a)
+{
+    static_assert(std::is_floating_point<ConvertedType>() || std::is_unsigned<ConvertedType>(), "operation_convert takes a seperate parameter to indicate signed result");
+    if constexpr (std::is_floating_point<ConvertedType>() && std::is_floating_point<T>())
+        static_assert(!SignedResult, "operation_convert does not allow signed result with floating point to floating point, it's implied");
+
+    if constexpr (SignedResult)
+        return static_cast<ToValueType<ConvertedType>>(static_cast<ConvertedType>(static_cast<std::make_signed_t<T>>(a)));
+    else
+        return static_cast<ConvertedType>(a);
+}
+
+template <typename ConvertedType, typename T>
+Value operation_convert_s(T a)
+{
+    return operation_convert<ConvertedType, true>(a);
+}
+
+template <typename ConvertedType, typename T>
+Value operation_convert_u(T a)
+{
+    return operation_convert<ConvertedType, false>(a);
+}
+
+template <typename ReinterpretedType, typename T>
+Value operation_reinterpret(T a)
+{
+    return std::bit_cast<ReinterpretedType>(a);
+}
+
+template <typename LowType, typename T>
+Value operation_extend(T a)
+{
+    static_assert(std::is_unsigned<LowType>(), "operation_extend expects low type to be unsigned");
+    return static_cast<T>(static_cast<std::make_signed_t<T>>(static_cast<std::make_signed_t<LowType>>(static_cast<LowType>(a))));
+}
+
+template <IsVector VectorType, typename T>
+Value operation_vector_broadcast(T a)
+{
+    return vector_broadcast<VectorType>(static_cast<VectorElement<VectorType>>(a));
 }
 
 template <IsVector T>
