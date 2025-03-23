@@ -2,7 +2,6 @@
 
 #include <Stream.h>
 #include <Value.h>
-#include <cstdint>
 
 enum class Type
 {

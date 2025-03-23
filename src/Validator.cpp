@@ -1,5 +1,6 @@
 #include <Parser.h>
 #include <Validator.h>
+#include <WasmFile.h>
 #include <cassert>
 #include <iostream>
 #include <ostream>
@@ -909,6 +910,321 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 stack.expect(Type::i32);
                 stack.expect(m_tables[std::get<uint32_t>(instruction.arguments)]);
                 stack.expect(Type::i32);
+                break;
+            case Opcode::v128_load:
+            case Opcode::v128_load8x8_s:
+            case Opcode::v128_load8x8_u:
+            case Opcode::v128_load16x4_s:
+            case Opcode::v128_load16x4_u:
+            case Opcode::v128_load32x2_s:
+            case Opcode::v128_load32x2_u:
+            case Opcode::v128_load8_splat:
+            case Opcode::v128_load16_splat:
+            case Opcode::v128_load32_splat:
+            case Opcode::v128_load64_splat:
+            case Opcode::v128_load32_zero:
+            case Opcode::v128_load64_zero:
+                validate_load_operation(Type::v128, 128, std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
+            case Opcode::v128_load8_lane:
+            case Opcode::v128_load16_lane:
+            case Opcode::v128_load32_lane:
+            case Opcode::v128_load64_lane: {
+                const auto& arguments = std::get<LoadStoreLaneArguments>(instruction.arguments);
+                VALIDATION_ASSERT(arguments.memArg.memoryIndex < m_memories);
+                VALIDATION_ASSERT((1ull << arguments.memArg.align) <= 128 / 8);
+                stack.expect(Type::v128);
+                stack.expect(Type::i32);
+                stack.push(Type::v128);
+                break;
+            }
+            case Opcode::v128_store:
+                validate_store_operation(Type::v128, 128, std::get<WasmFile::MemArg>(instruction.arguments));
+                break;
+            case Opcode::v128_store8_lane:
+            case Opcode::v128_store16_lane:
+            case Opcode::v128_store32_lane:
+            case Opcode::v128_store64_lane: {
+                const auto& arguments = std::get<LoadStoreLaneArguments>(instruction.arguments);
+                VALIDATION_ASSERT(arguments.memArg.memoryIndex < m_memories);
+                VALIDATION_ASSERT((1ull << arguments.memArg.align) <= 128 / 8);
+                stack.expect(Type::v128);
+                stack.expect(Type::i32);
+                break;
+            }
+            case Opcode::v128_const:
+                stack.push(Type::v128);
+                break;
+            case Opcode::i8x16_shuffle:
+                // FIXME: Check lanes
+                validate_binary_operation(Type::v128);
+                break;
+            case Opcode::i8x16_splat:
+            case Opcode::i16x8_splat:
+            case Opcode::i32x4_splat:
+                stack.expect(Type::i32);
+                stack.push(Type::v128);
+                break;
+            case Opcode::i64x2_splat:
+                stack.expect(Type::i64);
+                stack.push(Type::v128);
+                break;
+            case Opcode::f32x4_splat:
+                stack.expect(Type::f32);
+                stack.push(Type::v128);
+                break;
+            case Opcode::f64x2_splat:
+                stack.expect(Type::f64);
+                stack.push(Type::v128);
+                break;
+            case Opcode::i8x16_extract_lane_s:
+            case Opcode::i8x16_extract_lane_u:
+            case Opcode::i16x8_extract_lane_s:
+            case Opcode::i16x8_extract_lane_u:
+            case Opcode::i32x4_extract_lane:
+                stack.expect(Type::v128);
+                stack.push(Type::i32);
+                break;
+            case Opcode::i64x2_extract_lane:
+                stack.expect(Type::v128);
+                stack.push(Type::i64);
+                break;
+            case Opcode::f32x4_extract_lane:
+                stack.expect(Type::v128);
+                stack.push(Type::f32);
+                break;
+            case Opcode::f64x2_extract_lane:
+                stack.expect(Type::v128);
+                stack.push(Type::f64);
+                break;
+            case Opcode::i8x16_replace_lane:
+            case Opcode::i16x8_replace_lane:
+            case Opcode::i32x4_replace_lane:
+                stack.expect(Type::i32);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
+                break;
+            case Opcode::i64x2_replace_lane:
+                stack.expect(Type::i64);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
+                break;
+            case Opcode::f32x4_replace_lane:
+                stack.expect(Type::f32);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
+                break;
+            case Opcode::f64x2_replace_lane:
+                stack.expect(Type::f64);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
+                break;
+            case Opcode::i8x16_all_true:
+            case Opcode::i8x16_bitmask:
+            case Opcode::i16x8_all_true:
+            case Opcode::i16x8_bitmask:
+            case Opcode::i32x4_all_true:
+            case Opcode::i32x4_bitmask:
+            case Opcode::i64x2_all_true:
+            case Opcode::i64x2_bitmask:
+            case Opcode::v128_any_true:
+                validate_test_operation(Type::v128);
+                break;
+            case Opcode::i8x16_swizzle:
+            case Opcode::i8x16_eq:
+            case Opcode::i8x16_ne:
+            case Opcode::i8x16_lt_s:
+            case Opcode::i8x16_lt_u:
+            case Opcode::i8x16_gt_s:
+            case Opcode::i8x16_gt_u:
+            case Opcode::i8x16_le_s:
+            case Opcode::i8x16_le_u:
+            case Opcode::i8x16_ge_s:
+            case Opcode::i8x16_ge_u:
+            case Opcode::i16x8_eq:
+            case Opcode::i16x8_ne:
+            case Opcode::i16x8_lt_s:
+            case Opcode::i16x8_lt_u:
+            case Opcode::i16x8_gt_s:
+            case Opcode::i16x8_gt_u:
+            case Opcode::i16x8_le_s:
+            case Opcode::i16x8_le_u:
+            case Opcode::i16x8_ge_s:
+            case Opcode::i16x8_ge_u:
+            case Opcode::i32x4_eq:
+            case Opcode::i32x4_ne:
+            case Opcode::i32x4_lt_s:
+            case Opcode::i32x4_lt_u:
+            case Opcode::i32x4_gt_s:
+            case Opcode::i32x4_gt_u:
+            case Opcode::i32x4_le_s:
+            case Opcode::i32x4_le_u:
+            case Opcode::i32x4_ge_s:
+            case Opcode::i32x4_ge_u:
+            case Opcode::f32x4_eq:
+            case Opcode::f32x4_ne:
+            case Opcode::f32x4_lt:
+            case Opcode::f32x4_gt:
+            case Opcode::f32x4_le:
+            case Opcode::f32x4_ge:
+            case Opcode::f64x2_eq:
+            case Opcode::f64x2_ne:
+            case Opcode::f64x2_lt:
+            case Opcode::f64x2_gt:
+            case Opcode::f64x2_le:
+            case Opcode::f64x2_ge:
+            case Opcode::i64x2_eq:
+            case Opcode::i64x2_ne:
+            case Opcode::i64x2_lt_s:
+            case Opcode::i64x2_gt_s:
+            case Opcode::i64x2_le_s:
+            case Opcode::i64x2_ge_s:
+            case Opcode::v128_and:
+            case Opcode::v128_andnot:
+            case Opcode::v128_or:
+            case Opcode::v128_xor:
+            case Opcode::i8x16_add:
+            case Opcode::i8x16_add_sat_s:
+            case Opcode::i8x16_add_sat_u:
+            case Opcode::i8x16_sub:
+            case Opcode::i8x16_sub_sat_s:
+            case Opcode::i8x16_sub_sat_u:
+            case Opcode::i8x16_min_s:
+            case Opcode::i8x16_min_u:
+            case Opcode::i8x16_max_s:
+            case Opcode::i8x16_max_u:
+            case Opcode::i8x16_avgr_u:
+            case Opcode::i16x8_q15mulr_sat_s:
+            case Opcode::i16x8_add:
+            case Opcode::i16x8_add_sat_s:
+            case Opcode::i16x8_add_sat_u:
+            case Opcode::i16x8_sub:
+            case Opcode::i16x8_sub_sat_s:
+            case Opcode::i16x8_sub_sat_u:
+            case Opcode::i16x8_mul:
+            case Opcode::i16x8_min_s:
+            case Opcode::i16x8_min_u:
+            case Opcode::i16x8_max_s:
+            case Opcode::i16x8_max_u:
+            case Opcode::i16x8_avgr_u:
+            case Opcode::i32x4_add:
+            case Opcode::i32x4_sub:
+            case Opcode::i32x4_mul:
+            case Opcode::i32x4_min_s:
+            case Opcode::i32x4_min_u:
+            case Opcode::i32x4_max_s:
+            case Opcode::i32x4_max_u:
+            case Opcode::i64x2_add:
+            case Opcode::i64x2_sub:
+            case Opcode::i64x2_mul:
+            case Opcode::f32x4_add:
+            case Opcode::f32x4_sub:
+            case Opcode::f32x4_mul:
+            case Opcode::f32x4_div:
+            case Opcode::f32x4_min:
+            case Opcode::f32x4_max:
+            case Opcode::f32x4_pmin:
+            case Opcode::f32x4_pmax:
+            case Opcode::f64x2_add:
+            case Opcode::f64x2_sub:
+            case Opcode::f64x2_mul:
+            case Opcode::f64x2_div:
+            case Opcode::f64x2_min:
+            case Opcode::f64x2_max:
+            case Opcode::f64x2_pmin:
+            case Opcode::f64x2_pmax:
+            case Opcode::i8x16_narrow_i16x8_s:
+            case Opcode::i8x16_narrow_i16x8_u:
+            case Opcode::i16x8_extmul_low_i8x16_s:
+            case Opcode::i16x8_extmul_high_i8x16_s:
+            case Opcode::i16x8_extmul_low_i8x16_u:
+            case Opcode::i16x8_extmul_high_i8x16_u:
+            case Opcode::i32x4_dot_i16x8_s:
+            case Opcode::i32x4_extmul_low_i16x8_s:
+            case Opcode::i32x4_extmul_high_i16x8_s:
+            case Opcode::i32x4_extmul_low_i16x8_u:
+            case Opcode::i32x4_extmul_high_i16x8_u:
+            case Opcode::i64x2_extmul_low_i32x4_s:
+            case Opcode::i64x2_extmul_high_i32x4_s:
+            case Opcode::i64x2_extmul_low_i32x4_u:
+            case Opcode::i64x2_extmul_high_i32x4_u:
+            case Opcode::i16x8_narrow_i32x4_s:
+            case Opcode::i16x8_narrow_i32x4_u:
+                validate_binary_operation(Type::v128);
+                break;
+            case Opcode::i8x16_shl:
+            case Opcode::i8x16_shr_s:
+            case Opcode::i8x16_shr_u:
+            case Opcode::i16x8_shl:
+            case Opcode::i16x8_shr_s:
+            case Opcode::i16x8_shr_u:
+            case Opcode::i32x4_shl:
+            case Opcode::i32x4_shr_s:
+            case Opcode::i32x4_shr_u:
+            case Opcode::i64x2_shl:
+            case Opcode::i64x2_shr_s:
+            case Opcode::i64x2_shr_u:
+                stack.expect(Type::i32);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
+                break;
+            case Opcode::v128_not:
+            case Opcode::i8x16_abs:
+            case Opcode::i8x16_neg:
+            case Opcode::i8x16_popcnt:
+            case Opcode::f32x4_ceil:
+            case Opcode::f32x4_floor:
+            case Opcode::f32x4_trunc:
+            case Opcode::f32x4_nearest:
+            case Opcode::f64x2_ceil:
+            case Opcode::f64x2_floor:
+            case Opcode::f64x2_trunc:
+            case Opcode::i16x8_abs:
+            case Opcode::i16x8_neg:
+            case Opcode::i16x8_extend_low_i8x16_s:
+            case Opcode::i16x8_extend_high_i8x16_s:
+            case Opcode::i16x8_extend_low_i8x16_u:
+            case Opcode::i16x8_extend_high_i8x16_u:
+            case Opcode::f64x2_nearest:
+            case Opcode::i32x4_abs:
+            case Opcode::i32x4_neg:
+            case Opcode::i64x2_abs:
+            case Opcode::i64x2_neg:
+            case Opcode::f32x4_abs:
+            case Opcode::f32x4_neg:
+            case Opcode::f32x4_sqrt:
+            case Opcode::f64x2_abs:
+            case Opcode::f64x2_neg:
+            case Opcode::f64x2_sqrt:
+            case Opcode::f32x4_demote_f64x2_zero:
+            case Opcode::f64x2_promote_low_f32x4:
+            case Opcode::i16x8_extadd_pairwise_i8x16_s:
+            case Opcode::i16x8_extadd_pairwise_i8x16_u:
+            case Opcode::i32x4_extadd_pairwise_i16x8_s:
+            case Opcode::i32x4_extadd_pairwise_i16x8_u:
+            case Opcode::i32x4_extend_low_i16x8_s:
+            case Opcode::i32x4_extend_high_i16x8_s:
+            case Opcode::i32x4_extend_low_i16x8_u:
+            case Opcode::i32x4_extend_high_i16x8_u:
+            case Opcode::i64x2_extend_low_i32x4_s:
+            case Opcode::i64x2_extend_high_i32x4_s:
+            case Opcode::i64x2_extend_low_i32x4_u:
+            case Opcode::i64x2_extend_high_i32x4_u:
+            case Opcode::i32x4_trunc_sat_f32x4_s:
+            case Opcode::i32x4_trunc_sat_f32x4_u:
+            case Opcode::f32x4_convert_i32x4_s:
+            case Opcode::f32x4_convert_i32x4_u:
+            case Opcode::i32x4_trunc_sat_f64x2_s_zero:
+            case Opcode::i32x4_trunc_sat_f64x2_u_zero:
+            case Opcode::f64x2_convert_low_i32x4_s:
+            case Opcode::f64x2_convert_low_i32x4_u:
+                validate_unary_operation(Type::v128);
+                break;
+            case Opcode::v128_bitselect:
+                stack.expect(Type::v128);
+                stack.expect(Type::v128);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
                 break;
             default:
                 std::println(std::cerr, "Error: No validation for opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
