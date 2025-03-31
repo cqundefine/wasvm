@@ -13,6 +13,10 @@
     #define OS_LINUX
 #endif
 
+#if defined(__x86_64__)
+    #define ARCH_X86_64
+#endif
+
 #if defined(__GLIBC__)
     #define LIBC_GLIBC
     #define LIBC_GLIBC_VERSION(maj, min) __GLIBC_PREREQ((maj), (min))

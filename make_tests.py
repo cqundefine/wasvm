@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import platform
 
 TEST_DATA_PATH = "test_data"
 
@@ -9,7 +10,8 @@ TESTSUITE_SOURCE_PATH = os.path.join(TEST_DATA_PATH, "testsuite")
 TESTSUITE_PROCESSED_PATH = os.path.join(TEST_DATA_PATH, "testsuite-processed")
 
 WABT_VERSION = "1.0.36"
-WABT_URL = f"https://github.com/WebAssembly/wabt/releases/download/{WABT_VERSION}/wabt-{WABT_VERSION}-ubuntu-20.04.tar.gz"
+WABT_URL_X86_64 = f"https://github.com/WebAssembly/wabt/releases/download/{WABT_VERSION}/wabt-{WABT_VERSION}-ubuntu-20.04.tar.gz"
+WABT_GIT_REPO = "https://github.com/WebAssembly/wabt"
 WABT_DOWNLOADED_FILE = os.path.join(TEST_DATA_PATH, f"wabt-{WABT_VERSION}-ubuntu-20.04.tar.gz")
 WABT_DOWNLOADED_DIR = os.path.join(TEST_DATA_PATH, f"wabt-{WABT_VERSION}")
 
@@ -44,13 +46,18 @@ def check_executable(exe: str):
 check_executable("wget")
 check_executable("tar")
 check_executable("git")
+check_executable("make")
 
 os.makedirs(TEST_DATA_PATH, exist_ok=True)
 
 if not os.path.exists(WABT_PATH):
-    subprocess.run(["wget", "-P", TEST_DATA_PATH, WABT_URL])
-    subprocess.run(["tar", "-xvf", WABT_DOWNLOADED_FILE, "-C", TEST_DATA_PATH])
-    subprocess.run(["mv", WABT_DOWNLOADED_DIR, WABT_PATH])
+    if platform.processor() == "x86_64":
+        subprocess.run(["wget", "-P", TEST_DATA_PATH, WABT_URL_X86_64])
+        subprocess.run(["tar", "-xvf", WABT_DOWNLOADED_FILE, "-C", TEST_DATA_PATH])
+        subprocess.run(["mv", WABT_DOWNLOADED_DIR, WABT_PATH])
+    else:
+        subprocess.run(["git", "clone", WABT_GIT_REPO, WABT_PATH, "--depth=1", "--recursive"])
+        subprocess.run(["make", "-C", WABT_PATH])
 
 if not os.path.exists(TESTSUITE_SOURCE_PATH):
     subprocess.run(["git", "clone", "https://github.com/WebAssembly/testsuite", TESTSUITE_SOURCE_PATH, "--depth=1"])

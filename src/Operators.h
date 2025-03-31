@@ -142,10 +142,9 @@ constexpr Value operation_vector_swizzle(LhsType a, RhsType b)
 {
     // TODO: Use __builtin_shuffle on GCC
     LhsType result;
-    constexpr auto laneCount = sizeof(LhsType) / sizeof(VectorElement<LhsType>);
-    for (size_t i = 0; i < laneCount; i++)
+    for (size_t i = 0; i < lane_count<LhsType>(); i++)
     {
-        if (b[i] < laneCount)
+        if (b[i] < lane_count<LhsType>())
             result[i] = a[b[i]];
         else
             result[i] = 0;
@@ -159,7 +158,7 @@ constexpr Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
     // TODO: Find a SIMD instruction way to do this
     static_assert(std::is_same<LhsType, int16x8_t>() && std::is_same<RhsType, int16x8_t>(), "Unsupported vector type for q15mulr_sat");
     LhsType result;
-    for (size_t i = 0; i < 8; i++)
+    for (size_t i = 0; i < lane_count<LhsType>(); i++)
         result[i] = (a[i] * b[i] + 0x4000) >> 15;
     return result;
 }
@@ -293,8 +292,7 @@ constexpr Value operation_vector_broadcast(T a)
 template <IsVector T>
 constexpr Value operation_vector_all_true(T a)
 {
-    constexpr auto laneCount = sizeof(T) / sizeof(VectorElement<T>);
-    for (size_t i = 0; i < laneCount; i++)
+    for (size_t i = 0; i < lane_count<T>(); i++)
         if (a[i] == 0)
             return static_cast<uint32_t>(0);
     return static_cast<uint32_t>(1);
@@ -303,9 +301,8 @@ constexpr Value operation_vector_all_true(T a)
 template <IsVector T>
 constexpr Value operation_vector_bitmask(T a)
 {
-    constexpr auto laneCount = sizeof(T) / sizeof(VectorElement<T>);
     uint32_t result = 0;
-    for (size_t i = 0; i < laneCount; i++)
+    for (size_t i = 0; i < lane_count<T>(); i++)
         if (a[i] < 0)
             result |= (1 << i);
     return result;
@@ -314,10 +311,10 @@ constexpr Value operation_vector_bitmask(T a)
 template <IsVector DestinationVectorType, bool High, IsVector T>
 constexpr Value operation_vector_extend(T a)
 {
-    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
-    constexpr auto sourceOffset = High ? sizeof(T) / sizeof(VectorElement<T>) / 2 : 0;
+    static_assert(lane_count<DestinationVectorType>() == lane_count<T>() / 2);
+    constexpr auto sourceOffset = High ? lane_count<T>() / 2 : 0;
     DestinationVectorType result {};
-    for (size_t i = 0; i < laneCount; i++)
+    for (size_t i = 0; i < lane_count<DestinationVectorType>(); i++)
         result[i] = a[i + sourceOffset];
     return result;
 }
@@ -338,10 +335,10 @@ template <IsVector DestinationVectorType, bool High, IsVector LhsType, IsVector 
 constexpr Value operation_vector_extend_multiply(LhsType a, RhsType b)
 {
     static_assert(sizeof(LhsType) == sizeof(RhsType));
-    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
-    constexpr auto sourceOffset = High ? sizeof(LhsType) / sizeof(VectorElement<LhsType>) / 2 : 0;
+    static_assert(lane_count<DestinationVectorType>() == lane_count<LhsType>() / 2);
+    constexpr auto sourceOffset = High ? lane_count<LhsType>() / 2 : 0;
     DestinationVectorType result {};
-    for (size_t i = 0; i < laneCount; i++)
+    for (size_t i = 0; i < lane_count<DestinationVectorType>(); i++)
         result[i] = a[i + sourceOffset] * b[i + sourceOffset];
     return result;
 }

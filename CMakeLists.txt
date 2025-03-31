@@ -9,7 +9,11 @@ project(WASVM)
 
 add_compile_options(-fdiagnostics-color=always)
 
-add_compile_options(-Wimplicit-fallthrough -Wswitch-default -Wno-user-defined-literals -Wno-explicit-specialization-storage-class -march=x86-64-v2)
+add_compile_options(-Wimplicit-fallthrough -Wswitch-default -Wno-user-defined-literals -Wno-explicit-specialization-storage-class)
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+    add_compile_options(-march=x86-64-v2)
+endif()
 
 #add_compile_options(-fsanitize=address)
 #add_link_options(-fsanitize=address)
