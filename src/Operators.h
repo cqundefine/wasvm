@@ -155,11 +155,33 @@ constexpr Value operation_vector_swizzle(LhsType a, RhsType b)
 template <IsVector LhsType, IsVector RhsType>
 constexpr Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
 {
-    // TODO: Find a SIMD instruction way to do this
     static_assert(std::is_same<LhsType, int16x8_t>() && std::is_same<RhsType, int16x8_t>(), "Unsupported vector type for q15mulr_sat");
+
+    // FIXME: This is a fancy way to do this simd
+
+    // typedef int32_t __attribute__((vector_size(32))) int32x8_t;
+    // typedef float32_t __attribute__((vector_size(32))) float32x8_t;
+    // int32x8_t product = __builtin_convertvector(a, int32x8_t) * __builtin_convertvector(b, int32x8_t);
+
+    // product += 0x4000; // Rounding addition for Q15 format
+    // product >>= 15;
+
+    // shifted = __builtin_convertvector(
+    //     __builtin_convertvector(shifted, float32x8_t),
+    //     int32x8_t);
+    // shifted = vector_max(shifted, vector_broadcast<decltype(shifted)>(-32768));
+    // shifted = vector_min(shifted, vector_broadcast<decltype(shifted)>(32767));
+
+    // return __builtin_convertvector(shifted, int16x8_t);
+
     LhsType result;
-    for (size_t i = 0; i < lane_count<LhsType>(); i++)
-        result[i] = (a[i] * b[i] + 0x4000) >> 15;
+    for (size_t i = 0; i < lane_count<LhsType>(); ++i)
+    {
+        int32_t product = static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
+        product += 0x4000;
+        product >>= 15;
+        result[i] = static_cast<int16_t>(std::clamp(product, -32768, 32767));
+    }
     return result;
 }
 

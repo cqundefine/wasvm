@@ -53,7 +53,7 @@ using VectorElement = decltype(std::declval<T>()[0]);
 
 // lane count
 template <IsVector T>
-constexpr size_t lane_count()
+consteval size_t lane_count()
 {
     return sizeof(T) / sizeof(VectorElement<T>);
 }

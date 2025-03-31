@@ -10,3 +10,4 @@ spec
 test_data
 .cache
 jit.bin
+.clangd
