@@ -10,14 +10,14 @@
 
 #define GENERIC_BINARY_OPERATION_OPERATOR(name, op)         \
     template <typename LhsType, typename RhsType>           \
-    Value operation_##name(LhsType a, RhsType b)            \
+    constexpr Value operation_##name(LhsType a, RhsType b)  \
     {                                                       \
         return std::bit_cast<ToValueType<LhsType>>(a op b); \
     }
 
 #define GENERIC_BINARY_OPERATION_FUNCTION(name, function)           \
     template <typename LhsType, typename RhsType>                   \
-    Value operation_##name(LhsType a, RhsType b)                    \
+    constexpr Value operation_##name(LhsType a, RhsType b)          \
     {                                                               \
         return std::bit_cast<ToValueType<LhsType>>(function(a, b)); \
     }
@@ -25,13 +25,13 @@
 #define GENERIC_COMPARISON_OPERATION_OPERATOR(name, op)    \
     template <typename LhsType, typename RhsType>          \
         requires(!IsVector<LhsType> && !IsVector<RhsType>) \
-    Value operation_##name(LhsType a, RhsType b)           \
+    constexpr Value operation_##name(LhsType a, RhsType b) \
     {                                                      \
         return (uint32_t)(a op b);                         \
     }                                                      \
     template <typename LhsType, typename RhsType>          \
         requires(IsVector<LhsType> && IsVector<RhsType>)   \
-    Value operation_##name(LhsType a, RhsType b)           \
+    constexpr Value operation_##name(LhsType a, RhsType b) \
     {                                                      \
         return std::bit_cast<uint128_t>(a op b);           \
     }
@@ -56,9 +56,14 @@ GENERIC_COMPARISON_OPERATION_OPERATOR(ge, >=);
 
 GENERIC_BINARY_OPERATION_FUNCTION(vector_min, vector_min);
 GENERIC_BINARY_OPERATION_FUNCTION(vector_max, vector_max);
+GENERIC_BINARY_OPERATION_FUNCTION(vector_pmin, vector_pmin);
+GENERIC_BINARY_OPERATION_FUNCTION(vector_pmax, vector_pmax);
+GENERIC_BINARY_OPERATION_FUNCTION(vector_avgr, vector_avgr);
+GENERIC_BINARY_OPERATION_FUNCTION(vector_add_sat, vector_add_sat);
+GENERIC_BINARY_OPERATION_FUNCTION(vector_sub_sat, vector_sub_sat);
 
 template <typename LhsType, typename RhsType>
-Value operation_min(LhsType a, RhsType b)
+constexpr Value operation_min(LhsType a, RhsType b)
 {
     static_assert(std::is_floating_point<LhsType>() && std::is_floating_point<RhsType>(), "Opeartion min only supports floating point");
 
@@ -72,7 +77,7 @@ Value operation_min(LhsType a, RhsType b)
 }
 
 template <typename LhsType, typename RhsType>
-Value operation_max(LhsType a, RhsType b)
+constexpr Value operation_max(LhsType a, RhsType b)
 {
     static_assert(std::is_floating_point<LhsType>() && std::is_floating_point<RhsType>(), "Opeartion max only supports floating point");
 
@@ -86,7 +91,7 @@ Value operation_max(LhsType a, RhsType b)
 }
 
 template <typename LhsType, typename RhsType>
-Value operation_div(LhsType a, RhsType b)
+constexpr Value operation_div(LhsType a, RhsType b)
 {
     if constexpr (std::is_integral<LhsType>())
     {
@@ -102,7 +107,7 @@ Value operation_div(LhsType a, RhsType b)
 }
 
 template <typename LhsType, typename RhsType>
-Value operation_rem(LhsType a, RhsType b)
+constexpr Value operation_rem(LhsType a, RhsType b)
 {
     if constexpr (std::is_signed<LhsType>())
         if (b == -1)
@@ -115,25 +120,25 @@ Value operation_rem(LhsType a, RhsType b)
 }
 
 template <typename LhsType, typename RhsType>
-Value operation_andnot(LhsType a, RhsType b)
+constexpr Value operation_andnot(LhsType a, RhsType b)
 {
     return a & ~b;
 }
 
 template <IsVector LhsType, typename RhsType>
-Value operation_vector_shl(LhsType a, RhsType b)
+constexpr Value operation_vector_shl(LhsType a, RhsType b)
 {
     return a << (b % (sizeof(VectorElement<LhsType>) * 8));
 }
 
 template <IsVector LhsType, typename RhsType>
-Value operation_vector_shr(LhsType a, RhsType b)
+constexpr Value operation_vector_shr(LhsType a, RhsType b)
 {
     return a >> (b % (sizeof(VectorElement<LhsType>) * 8));
 }
 
 template <IsVector LhsType, IsVector RhsType>
-Value operation_vector_swizzle(LhsType a, RhsType b)
+constexpr Value operation_vector_swizzle(LhsType a, RhsType b)
 {
     // TODO: Use __builtin_shuffle on GCC
     LhsType result;
@@ -149,7 +154,7 @@ Value operation_vector_swizzle(LhsType a, RhsType b)
 }
 
 template <IsVector LhsType, IsVector RhsType>
-Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
+constexpr Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
 {
     // TODO: Find a SIMD instruction way to do this
     static_assert(std::is_same<LhsType, int16x8_t>() && std::is_same<RhsType, int16x8_t>(), "Unsupported vector type for q15mulr_sat");
@@ -161,7 +166,7 @@ Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
 
 #define GENERIC_UNARY_OPERATION_FUNCTION(name, function) \
     template <typename T>                                \
-    Value operation_##name(T a)                          \
+    constexpr Value operation_##name(T a)                \
     {                                                    \
         return (ToValueType<T>)function(a);              \
     }
@@ -183,15 +188,22 @@ GENERIC_UNARY_OPERATION_FUNCTION(vector_ceil, vector_ceil);
 GENERIC_UNARY_OPERATION_FUNCTION(vector_floor, vector_floor);
 GENERIC_UNARY_OPERATION_FUNCTION(vector_trunc, vector_trunc);
 GENERIC_UNARY_OPERATION_FUNCTION(vector_nearest, vector_nearest);
+GENERIC_UNARY_OPERATION_FUNCTION(vector_sqrt, vector_sqrt);
+GENERIC_UNARY_OPERATION_FUNCTION(vector_popcnt, vector_popcnt);
 
 template <typename T>
-Value operation_eqz(T a)
+constexpr Value operation_eqz(T a)
 {
-    return (uint32_t)(a == 0);
+    return static_cast<uint32_t>(a == 0);
+}
+template <typename T>
+constexpr Value operation_any_true(T a)
+{
+    return static_cast<uint32_t>(a != 0);
 }
 
 template <typename TruncatedType, typename T>
-Value operation_trunc(T a)
+constexpr Value operation_trunc(T a)
 {
     static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "operation_trunc is meant for floating point to integer conversions");
 
@@ -210,7 +222,7 @@ Value operation_trunc(T a)
 }
 
 template <typename TruncatedType, typename T>
-Value operation_trunc_sat(T a)
+constexpr Value operation_trunc_sat(T a)
 {
     static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "operation_trunc_sat is meant for floating point to integer conversions");
 
@@ -235,7 +247,7 @@ Value operation_trunc_sat(T a)
 }
 
 template <typename ConvertedType, bool SignedResult, typename T>
-Value operation_convert(T a)
+constexpr Value operation_convert(T a)
 {
     static_assert(std::is_floating_point<ConvertedType>() || std::is_unsigned<ConvertedType>(), "operation_convert takes a seperate parameter to indicate signed result");
     if constexpr (std::is_floating_point<ConvertedType>() && std::is_floating_point<T>())
@@ -248,48 +260,48 @@ Value operation_convert(T a)
 }
 
 template <typename ConvertedType, typename T>
-Value operation_convert_s(T a)
+constexpr Value operation_convert_s(T a)
 {
     return operation_convert<ConvertedType, true>(a);
 }
 
 template <typename ConvertedType, typename T>
-Value operation_convert_u(T a)
+constexpr Value operation_convert_u(T a)
 {
     return operation_convert<ConvertedType, false>(a);
 }
 
 template <typename ReinterpretedType, typename T>
-Value operation_reinterpret(T a)
+constexpr Value operation_reinterpret(T a)
 {
     return std::bit_cast<ReinterpretedType>(a);
 }
 
 template <typename LowType, typename T>
-Value operation_extend(T a)
+constexpr Value operation_extend(T a)
 {
     static_assert(std::is_unsigned<LowType>(), "operation_extend expects low type to be unsigned");
     return static_cast<T>(static_cast<std::make_signed_t<T>>(static_cast<std::make_signed_t<LowType>>(static_cast<LowType>(a))));
 }
 
 template <IsVector VectorType, typename T>
-Value operation_vector_broadcast(T a)
+constexpr Value operation_vector_broadcast(T a)
 {
     return vector_broadcast<VectorType>(static_cast<VectorElement<VectorType>>(a));
 }
 
 template <IsVector T>
-Value operation_all_true(T a)
+constexpr Value operation_vector_all_true(T a)
 {
     constexpr auto laneCount = sizeof(T) / sizeof(VectorElement<T>);
     for (size_t i = 0; i < laneCount; i++)
         if (a[i] == 0)
-            return (uint32_t)0;
-    return (uint32_t)1;
+            return static_cast<uint32_t>(0);
+    return static_cast<uint32_t>(1);
 }
 
 template <IsVector T>
-Value operation_bitmask(T a)
+constexpr Value operation_vector_bitmask(T a)
 {
     constexpr auto laneCount = sizeof(T) / sizeof(VectorElement<T>);
     uint32_t result = 0;
@@ -297,4 +309,51 @@ Value operation_bitmask(T a)
         if (a[i] < 0)
             result |= (1 << i);
     return result;
+}
+
+template <IsVector DestinationVectorType, bool High, IsVector T>
+constexpr Value operation_vector_extend(T a)
+{
+    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
+    constexpr auto sourceOffset = High ? sizeof(T) / sizeof(VectorElement<T>) / 2 : 0;
+    DestinationVectorType result {};
+    for (size_t i = 0; i < laneCount; i++)
+        result[i] = a[i + sourceOffset];
+    return result;
+}
+
+template <IsVector DestinationVectorType, IsVector T>
+constexpr Value operation_vector_extend_low(T a)
+{
+    return operation_vector_extend<DestinationVectorType, false>(a);
+}
+
+template <IsVector DestinationVectorType, IsVector T>
+constexpr Value operation_vector_extend_high(T a)
+{
+    return operation_vector_extend<DestinationVectorType, true>(a);
+}
+
+template <IsVector DestinationVectorType, bool High, IsVector LhsType, IsVector RhsType>
+constexpr Value operation_vector_extend_multiply(LhsType a, RhsType b)
+{
+    static_assert(sizeof(LhsType) == sizeof(RhsType));
+    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
+    constexpr auto sourceOffset = High ? sizeof(LhsType) / sizeof(VectorElement<LhsType>) / 2 : 0;
+    DestinationVectorType result {};
+    for (size_t i = 0; i < laneCount; i++)
+        result[i] = a[i + sourceOffset] * b[i + sourceOffset];
+    return result;
+}
+
+template <IsVector DestinationVectorType, IsVector LhsType, IsVector RhsType>
+constexpr Value operation_vector_extend_multiply_low(LhsType a, RhsType b)
+{
+    return operation_vector_extend_multiply<DestinationVectorType, false>(a, b);
+}
+
+template <IsVector DestinationVectorType, IsVector LhsType, IsVector RhsType>
+constexpr Value operation_vector_extend_multiply_high(LhsType a, RhsType b)
+{
+    return operation_vector_extend_multiply<DestinationVectorType, true>(a, b);
 }

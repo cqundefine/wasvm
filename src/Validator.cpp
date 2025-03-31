@@ -1,6 +1,9 @@
-#include "Type.h"
+#include "Util.h"
+#include "Value.h"
 #include <Parser.h>
+#include <Type.h>
 #include <Validator.h>
+#include <ValueStack.h>
 #include <WasmFile.h>
 #include <cassert>
 #include <iostream>
@@ -214,6 +217,25 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
 
         for (auto index : element.functionIndexes)
             VALIDATION_ASSERT(index < m_functions.size());
+
+        /*if (element.mode == WasmFile::ElementMode::Declarative)
+        {
+            for (size_t i = 0; i < element.functionIndexes.size(); i++)
+            {
+                if (element.functionIndexes.empty())
+                {
+                    Value referenceValue = run_global_restricted_constant_expression(element.referencesExpr[i]);
+                    assert(referenceValue.holds_alternative<Reference>());
+                    const auto reference = referenceValue.get<Reference>();
+                    VALIDATION_ASSERT(reference.type == ReferenceType::Function);
+                    m_declared_functions.push_back(reference.index);
+                }
+                else
+                {
+                    m_declared_functions.push_back(element.functionIndexes[i]);
+                }
+            }
+        }*/
     }
 
     for (const auto& data : wasmFile->dataBlocks)
@@ -539,65 +561,21 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 stack.expect(Type::i32);
                 break;
             }
-            case Opcode::i32_load:
-                validate_load_operation(Type::i32, 32, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_load:
-                validate_load_operation(Type::i64, 64, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::f32_load:
-                validate_load_operation(Type::f32, 32, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::f64_load:
-                validate_load_operation(Type::f64, 64, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i32_load8_s:
-            case Opcode::i32_load8_u:
-                validate_load_operation(Type::i32, 8, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i32_load16_s:
-            case Opcode::i32_load16_u:
-                validate_load_operation(Type::i32, 16, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_load8_s:
-            case Opcode::i64_load8_u:
-                validate_load_operation(Type::i64, 8, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_load16_s:
-            case Opcode::i64_load16_u:
-                validate_load_operation(Type::i64, 16, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_load32_s:
-            case Opcode::i64_load32_u:
-                validate_load_operation(Type::i64, 32, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i32_store:
-                validate_store_operation(Type::i32, 32, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_store:
-                validate_store_operation(Type::i64, 64, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::f32_store:
-                validate_store_operation(Type::f32, 32, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::f64_store:
-                validate_store_operation(Type::f64, 64, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i32_store8:
-                validate_store_operation(Type::i32, 8, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i32_store16:
-                validate_store_operation(Type::i32, 16, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_store8:
-                validate_store_operation(Type::i64, 8, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_store16:
-                validate_store_operation(Type::i64, 16, instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case Opcode::i64_store32:
-                validate_store_operation(Type::i64, 32, instruction.get_arguments<WasmFile::MemArg>());
-                break;
+
+#define X(opcode, memoryType, targetType)                                                                                                            \
+    case opcode:                                                                                                                                     \
+        validate_load_operation(type_from_cpp_type<ToValueType<targetType>>, sizeof(memoryType) * 8, instruction.get_arguments<WasmFile::MemArg>()); \
+        break;
+                ENUMERATE_LOAD_OPERATIONS(X)
+#undef X
+
+#define X(opcode, memoryType, targetType)                                                                                                             \
+    case opcode:                                                                                                                                      \
+        validate_store_operation(type_from_cpp_type<ToValueType<targetType>>, sizeof(memoryType) * 8, instruction.get_arguments<WasmFile::MemArg>()); \
+        break;
+                ENUMERATE_STORE_OPERATIONS(X)
+#undef X
+
             case Opcode::memory_size:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories);
                 stack.push(Type::i32);
@@ -641,12 +619,12 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 VALIDATION_ASSERT(stack.pop().is_reference_type());
                 stack.push(Type::i32);
                 break;
-
             case Opcode::ref_func:
-                // TODO: Check if the function was declared
+                // VALIDATION_ASSERT(vector_contains(m_declared_functions, instruction.get_arguments<uint32_t>()));
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_functions.size());
                 stack.push(Type::funcref);
                 break;
+
             case Opcode::memory_init: {
                 VALIDATION_ASSERT(m_wasmFile->dataCount);
                 const auto& arguments = instruction.get_arguments<MemoryInitArguments>();
@@ -715,13 +693,6 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 stack.expect(m_tables[instruction.get_arguments<uint32_t>()]);
                 stack.expect(Type::i32);
                 break;
-            case Opcode::v128_load:
-            case Opcode::v128_load8x8_s:
-            case Opcode::v128_load8x8_u:
-            case Opcode::v128_load16x4_s:
-            case Opcode::v128_load16x4_u:
-            case Opcode::v128_load32x2_s:
-            case Opcode::v128_load32x2_u:
             case Opcode::v128_load8_splat:
             case Opcode::v128_load16_splat:
             case Opcode::v128_load32_splat:
@@ -742,9 +713,6 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 stack.push(Type::v128);
                 break;
             }
-            case Opcode::v128_store:
-                validate_store_operation(Type::v128, 128, instruction.get_arguments<WasmFile::MemArg>());
-                break;
             case Opcode::v128_store8_lane:
             case Opcode::v128_store16_lane:
             case Opcode::v128_store32_lane:
@@ -762,24 +730,6 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
             case Opcode::i8x16_shuffle:
                 // FIXME: Check lanes
                 validate_binary_operation_old(Type::v128);
-                break;
-            case Opcode::i8x16_splat:
-            case Opcode::i16x8_splat:
-            case Opcode::i32x4_splat:
-                stack.expect(Type::i32);
-                stack.push(Type::v128);
-                break;
-            case Opcode::i64x2_splat:
-                stack.expect(Type::i64);
-                stack.push(Type::v128);
-                break;
-            case Opcode::f32x4_splat:
-                stack.expect(Type::f32);
-                stack.push(Type::v128);
-                break;
-            case Opcode::f64x2_splat:
-                stack.expect(Type::f64);
-                stack.push(Type::v128);
                 break;
             case Opcode::i8x16_extract_lane_s:
             case Opcode::i8x16_extract_lane_u:
@@ -823,197 +773,19 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::i8x16_all_true:
-            case Opcode::i8x16_bitmask:
-            case Opcode::i16x8_all_true:
-            case Opcode::i16x8_bitmask:
-            case Opcode::i32x4_all_true:
-            case Opcode::i32x4_bitmask:
-            case Opcode::i64x2_all_true:
-            case Opcode::i64x2_bitmask:
-            case Opcode::v128_any_true:
-                validate_test_operation_old(Type::v128);
-                break;
-            case Opcode::i8x16_swizzle:
-            case Opcode::i8x16_eq:
-            case Opcode::i8x16_ne:
-            case Opcode::i8x16_lt_s:
-            case Opcode::i8x16_lt_u:
-            case Opcode::i8x16_gt_s:
-            case Opcode::i8x16_gt_u:
-            case Opcode::i8x16_le_s:
-            case Opcode::i8x16_le_u:
-            case Opcode::i8x16_ge_s:
-            case Opcode::i8x16_ge_u:
-            case Opcode::i16x8_eq:
-            case Opcode::i16x8_ne:
-            case Opcode::i16x8_lt_s:
-            case Opcode::i16x8_lt_u:
-            case Opcode::i16x8_gt_s:
-            case Opcode::i16x8_gt_u:
-            case Opcode::i16x8_le_s:
-            case Opcode::i16x8_le_u:
-            case Opcode::i16x8_ge_s:
-            case Opcode::i16x8_ge_u:
-            case Opcode::i32x4_eq:
-            case Opcode::i32x4_ne:
-            case Opcode::i32x4_lt_s:
-            case Opcode::i32x4_lt_u:
-            case Opcode::i32x4_gt_s:
-            case Opcode::i32x4_gt_u:
-            case Opcode::i32x4_le_s:
-            case Opcode::i32x4_le_u:
-            case Opcode::i32x4_ge_s:
-            case Opcode::i32x4_ge_u:
-            case Opcode::f32x4_eq:
-            case Opcode::f32x4_ne:
-            case Opcode::f32x4_lt:
-            case Opcode::f32x4_gt:
-            case Opcode::f32x4_le:
-            case Opcode::f32x4_ge:
-            case Opcode::f64x2_eq:
-            case Opcode::f64x2_ne:
-            case Opcode::f64x2_lt:
-            case Opcode::f64x2_gt:
-            case Opcode::f64x2_le:
-            case Opcode::f64x2_ge:
-            case Opcode::i64x2_eq:
-            case Opcode::i64x2_ne:
-            case Opcode::i64x2_lt_s:
-            case Opcode::i64x2_gt_s:
-            case Opcode::i64x2_le_s:
-            case Opcode::i64x2_ge_s:
-            case Opcode::v128_and:
-            case Opcode::v128_andnot:
-            case Opcode::v128_or:
-            case Opcode::v128_xor:
-            case Opcode::i8x16_add:
-            case Opcode::i8x16_add_sat_s:
-            case Opcode::i8x16_add_sat_u:
-            case Opcode::i8x16_sub:
-            case Opcode::i8x16_sub_sat_s:
-            case Opcode::i8x16_sub_sat_u:
-            case Opcode::i8x16_min_s:
-            case Opcode::i8x16_min_u:
-            case Opcode::i8x16_max_s:
-            case Opcode::i8x16_max_u:
-            case Opcode::i8x16_avgr_u:
-            case Opcode::i16x8_q15mulr_sat_s:
-            case Opcode::i16x8_add:
-            case Opcode::i16x8_add_sat_s:
-            case Opcode::i16x8_add_sat_u:
-            case Opcode::i16x8_sub:
-            case Opcode::i16x8_sub_sat_s:
-            case Opcode::i16x8_sub_sat_u:
-            case Opcode::i16x8_mul:
-            case Opcode::i16x8_min_s:
-            case Opcode::i16x8_min_u:
-            case Opcode::i16x8_max_s:
-            case Opcode::i16x8_max_u:
-            case Opcode::i16x8_avgr_u:
-            case Opcode::i32x4_add:
-            case Opcode::i32x4_sub:
-            case Opcode::i32x4_mul:
-            case Opcode::i32x4_min_s:
-            case Opcode::i32x4_min_u:
-            case Opcode::i32x4_max_s:
-            case Opcode::i32x4_max_u:
-            case Opcode::i64x2_add:
-            case Opcode::i64x2_sub:
-            case Opcode::i64x2_mul:
-            case Opcode::f32x4_add:
-            case Opcode::f32x4_sub:
-            case Opcode::f32x4_mul:
-            case Opcode::f32x4_div:
-            case Opcode::f32x4_min:
-            case Opcode::f32x4_max:
-            case Opcode::f32x4_pmin:
-            case Opcode::f32x4_pmax:
-            case Opcode::f64x2_add:
-            case Opcode::f64x2_sub:
-            case Opcode::f64x2_mul:
-            case Opcode::f64x2_div:
-            case Opcode::f64x2_min:
-            case Opcode::f64x2_max:
-            case Opcode::f64x2_pmin:
-            case Opcode::f64x2_pmax:
             case Opcode::i8x16_narrow_i16x8_s:
             case Opcode::i8x16_narrow_i16x8_u:
-            case Opcode::i16x8_extmul_low_i8x16_s:
-            case Opcode::i16x8_extmul_high_i8x16_s:
-            case Opcode::i16x8_extmul_low_i8x16_u:
-            case Opcode::i16x8_extmul_high_i8x16_u:
             case Opcode::i32x4_dot_i16x8_s:
-            case Opcode::i32x4_extmul_low_i16x8_s:
-            case Opcode::i32x4_extmul_high_i16x8_s:
-            case Opcode::i32x4_extmul_low_i16x8_u:
-            case Opcode::i32x4_extmul_high_i16x8_u:
-            case Opcode::i64x2_extmul_low_i32x4_s:
-            case Opcode::i64x2_extmul_high_i32x4_s:
-            case Opcode::i64x2_extmul_low_i32x4_u:
-            case Opcode::i64x2_extmul_high_i32x4_u:
             case Opcode::i16x8_narrow_i32x4_s:
             case Opcode::i16x8_narrow_i32x4_u:
                 validate_binary_operation_old(Type::v128);
                 break;
-            case Opcode::i8x16_shl:
-            case Opcode::i8x16_shr_s:
-            case Opcode::i8x16_shr_u:
-            case Opcode::i16x8_shl:
-            case Opcode::i16x8_shr_s:
-            case Opcode::i16x8_shr_u:
-            case Opcode::i32x4_shl:
-            case Opcode::i32x4_shr_s:
-            case Opcode::i32x4_shr_u:
-            case Opcode::i64x2_shl:
-            case Opcode::i64x2_shr_s:
-            case Opcode::i64x2_shr_u:
-                stack.expect(Type::i32);
-                stack.expect(Type::v128);
-                stack.push(Type::v128);
-                break;
-            case Opcode::v128_not:
-            case Opcode::i8x16_abs:
-            case Opcode::i8x16_neg:
-            case Opcode::i8x16_popcnt:
-            case Opcode::f32x4_ceil:
-            case Opcode::f32x4_floor:
-            case Opcode::f32x4_trunc:
-            case Opcode::f32x4_nearest:
-            case Opcode::f64x2_ceil:
-            case Opcode::f64x2_floor:
-            case Opcode::f64x2_trunc:
-            case Opcode::i16x8_abs:
-            case Opcode::i16x8_neg:
-            case Opcode::i16x8_extend_low_i8x16_s:
-            case Opcode::i16x8_extend_high_i8x16_s:
-            case Opcode::i16x8_extend_low_i8x16_u:
-            case Opcode::i16x8_extend_high_i8x16_u:
-            case Opcode::f64x2_nearest:
-            case Opcode::i32x4_abs:
-            case Opcode::i32x4_neg:
-            case Opcode::i64x2_abs:
-            case Opcode::i64x2_neg:
-            case Opcode::f32x4_abs:
-            case Opcode::f32x4_neg:
-            case Opcode::f32x4_sqrt:
-            case Opcode::f64x2_abs:
-            case Opcode::f64x2_neg:
-            case Opcode::f64x2_sqrt:
             case Opcode::f32x4_demote_f64x2_zero:
             case Opcode::f64x2_promote_low_f32x4:
             case Opcode::i16x8_extadd_pairwise_i8x16_s:
             case Opcode::i16x8_extadd_pairwise_i8x16_u:
             case Opcode::i32x4_extadd_pairwise_i16x8_s:
             case Opcode::i32x4_extadd_pairwise_i16x8_u:
-            case Opcode::i32x4_extend_low_i16x8_s:
-            case Opcode::i32x4_extend_high_i16x8_s:
-            case Opcode::i32x4_extend_low_i16x8_u:
-            case Opcode::i32x4_extend_high_i16x8_u:
-            case Opcode::i64x2_extend_low_i32x4_s:
-            case Opcode::i64x2_extend_high_i32x4_s:
-            case Opcode::i64x2_extend_low_i32x4_u:
-            case Opcode::i64x2_extend_high_i32x4_u:
             case Opcode::i32x4_trunc_sat_f32x4_s:
             case Opcode::i32x4_trunc_sat_f32x4_u:
             case Opcode::f32x4_convert_i32x4_s:
@@ -1085,7 +857,7 @@ void Validator::validate_constant_expression(const std::vector<Instruction>& ins
                 stack.push(instruction.get_arguments<Type>());
                 break;
             case Opcode::ref_func:
-                // TODO: Check if the function was declared
+                // VALIDATION_ASSERT(vector_contains(m_declared_functions, instruction.get_arguments<uint32_t>()));
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_functions.size());
                 stack.push(Type::funcref);
                 break;
@@ -1099,4 +871,47 @@ void Validator::validate_constant_expression(const std::vector<Instruction>& ins
 
     stack.expect(expectedReturnType);
     VALIDATION_ASSERT(stack.size() == 0);
+}
+
+Value Validator::run_global_restricted_constant_expression(const std::vector<Instruction>& instructions)
+{
+    ValueStack stack;
+
+    for (const auto& instruction : instructions)
+    {
+        switch (instruction.opcode)
+        {
+            using enum Opcode;
+            case end:
+                break;
+            case i32_const:
+                stack.push(instruction.get_arguments<uint32_t>());
+                break;
+            case i64_const:
+                stack.push(instruction.get_arguments<uint64_t>());
+                break;
+            case f32_const:
+                stack.push(instruction.get_arguments<float>());
+                break;
+            case f64_const:
+                stack.push(instruction.get_arguments<double>());
+                break;
+            case ref_null:
+                stack.push(default_value_for_type(instruction.get_arguments<Type>()));
+                break;
+            case ref_func:
+                stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>() });
+                break;
+            case v128_const:
+                stack.push(instruction.get_arguments<uint128_t>());
+                break;
+            default:
+                assert(false);
+        }
+    }
+
+    assert(stack.size() == 1);
+
+    Value value = stack.pop();
+    return value;
 }

@@ -1,10 +1,12 @@
 #pragma once
 
 #include <algorithm>
+#include <bits/floatn-common.h>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <sys/time.h>
+#include <type_traits>
 #include <vector>
 
 #if defined(__linux__)
@@ -49,12 +51,12 @@ constexpr Ref<T> StaticRefCast(const Ref<Base>& base)
 void fill_buffer_with_random_data(uint8_t* data, size_t size);
 
 template <std::floating_point T>
-T typed_nan()
+consteval T typed_nan()
 {
     if constexpr (std::is_same<T, float>())
-        return std::nanf("");
+        return __builtin_nanf32("");
     else if constexpr (std::is_same<T, double>())
-        return std::nan("");
+        return __builtin_nanf64("");
     else
         static_assert(false, "Unsupported type of NaN");
 }
@@ -77,6 +79,46 @@ constexpr T ceil_div(T a, U b)
     if ((a % b) != 0 && (a > 0) == (b > 0))
         result++;
     return result;
+}
+
+template <typename T, typename U>
+    requires std::is_integral_v<T> && std::is_integral_v<U>
+constexpr T saturating_add(T a, U b)
+{
+    if (a > 0 && b > 0 && a > std::numeric_limits<T>::max() - b)
+        return std::numeric_limits<T>::max();
+    if (a < 0 && b < 0 && a < std::numeric_limits<T>::min() - b)
+        return std::numeric_limits<T>::min();
+    return a + b;
+}
+
+template <typename T, typename U>
+    requires std::is_integral_v<T> && std::is_integral_v<U>
+constexpr T saturating_sub(T a, U b)
+{
+    if (a > 0 && b < 0 && a > std::numeric_limits<T>::max() + b)
+        return std::numeric_limits<T>::max();
+    if (a < 0 && b > 0 && a < std::numeric_limits<T>::min() + b)
+        return std::numeric_limits<T>::min();
+    return a - b;
+}
+
+template <typename T>
+constexpr T nan_min(T a, T b)
+{
+    if constexpr (std::is_floating_point<T>())
+        if (std::isnan(a) || std::isnan(b))
+            return std::numeric_limits<T>::quiet_NaN();
+    return (a < b) ? a : b;
+}
+
+template <typename T>
+constexpr T nan_max(T a, T b)
+{
+    if constexpr (std::is_floating_point<T>())
+        if (std::isnan(a) || std::isnan(b))
+            return std::numeric_limits<T>::quiet_NaN();
+    return (a > b) ? a : b;
 }
 
 using float32_t = float;

@@ -1,3 +1,4 @@
+#include "Value.h"
 #include "WasmFile.h"
 #include <Compiler.h>
 #include <Opcode.h>
@@ -108,7 +109,9 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
                     new_module->get_table(element.table)->elements[begin + i] = reference.get<Reference>();
                 }
                 else
+                {
                     new_module->get_table(element.table)->elements[begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i] };
+                }
             }
         }
 
@@ -346,75 +349,21 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 table->elements[index] = value;
                 break;
             }
-            case i32_load:
-                run_load_instruction<uint32_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_load:
-                run_load_instruction<uint64_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case f32_load:
-                run_load_instruction<float, float>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case f64_load:
-                run_load_instruction<double, double>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i32_load8_s:
-                run_load_instruction<int8_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i32_load8_u:
-                run_load_instruction<uint8_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i32_load16_s:
-                run_load_instruction<int16_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i32_load16_u:
-                run_load_instruction<uint16_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_load8_s:
-                run_load_instruction<int8_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_load8_u:
-                run_load_instruction<uint8_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_load16_s:
-                run_load_instruction<int16_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_load16_u:
-                run_load_instruction<uint16_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_load32_s:
-                run_load_instruction<int32_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_load32_u:
-                run_load_instruction<uint32_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i32_store:
-                run_store_instruction<uint32_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_store:
-                run_store_instruction<uint64_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case f32_store:
-                run_store_instruction<float, float>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case f64_store:
-                run_store_instruction<double, double>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i32_store8:
-                run_store_instruction<uint8_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i32_store16:
-                run_store_instruction<uint16_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_store8:
-                run_store_instruction<uint8_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_store16:
-                run_store_instruction<uint16_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case i64_store32:
-                run_store_instruction<uint32_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
+
+#define X(opcode, memoryType, targetType)                                                            \
+    case opcode:                                                                                     \
+        run_load_instruction<memoryType, targetType>(instruction.get_arguments<WasmFile::MemArg>()); \
+        break;
+                ENUMERATE_LOAD_OPERATIONS(X)
+#undef X
+
+#define X(opcode, memoryType, targetType)                                                             \
+    case opcode:                                                                                      \
+        run_store_instruction<memoryType, targetType>(instruction.get_arguments<WasmFile::MemArg>()); \
+        break;
+                ENUMERATE_STORE_OPERATIONS(X)
+#undef X
+
             case memory_size:
                 m_frame->stack.push(mod->get_memory(instruction.get_arguments<uint32_t>())->size);
                 break;
@@ -619,30 +568,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 break;
             }
-            case v128_load:
-                run_load_instruction<uint128_t, uint128_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case v128_load8x8_s:
-                run_load_lanes_instruction<int16x8_t, int8_t, int16_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case v128_load8x8_u:
-                run_load_lanes_instruction<uint16x8_t, uint8_t, uint16_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case v128_load16x4_s:
-                run_load_lanes_instruction<int32x4_t, int16_t, int32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case v128_load16x4_u:
-                run_load_lanes_instruction<uint32x4_t, uint16_t, uint32_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case v128_load32x2_s:
-                run_load_lanes_instruction<int64x2_t, int32_t, int64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case v128_load32x2_u:
-                run_load_lanes_instruction<uint64x2_t, uint32_t, uint64_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
-            case v128_store:
-                run_store_instruction<uint128_t, uint128_t>(instruction.get_arguments<WasmFile::MemArg>());
-                break;
             case v128_const:
                 m_frame->stack.push(instruction.get_arguments<uint128_t>());
                 break;
@@ -662,27 +587,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->stack.push(result);
                 break;
             }
-            case i8x16_swizzle:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_vector_swizzle>();
-                break;
-            case i8x16_splat:
-                run_unary_operation<uint32_t, operation_vector_broadcast<uint8x16_t>>();
-                break;
-            case i16x8_splat:
-                run_unary_operation<uint32_t, operation_vector_broadcast<uint16x8_t>>();
-                break;
-            case i32x4_splat:
-                run_unary_operation<uint32_t, operation_vector_broadcast<uint32x4_t>>();
-                break;
-            case i64x2_splat:
-                run_unary_operation<uint64_t, operation_vector_broadcast<uint64x2_t>>();
-                break;
-            case f32x4_splat:
-                run_unary_operation<float, operation_vector_broadcast<float32x4_t>>();
-                break;
-            case f64x2_splat:
-                run_unary_operation<double, operation_vector_broadcast<float64x2_t>>();
-                break;
             case i8x16_extract_lane_s:
                 m_frame->stack.push((uint32_t)(int32_t)m_frame->stack.pop_as<int8x16_t>()[instruction.get_arguments<uint8_t>()]);
                 break;
@@ -749,147 +653,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->stack.push(vector);
                 break;
             }
-            case i8x16_eq:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_eq>();
-                break;
-            case i8x16_ne:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_ne>();
-                break;
-            case i8x16_lt_s:
-                run_binary_operation<int8x16_t, int8x16_t, operation_lt>();
-                break;
-            case i8x16_lt_u:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_lt>();
-                break;
-            case i8x16_gt_s:
-                run_binary_operation<int8x16_t, int8x16_t, operation_gt>();
-                break;
-            case i8x16_gt_u:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_gt>();
-                break;
-            case i8x16_le_s:
-                run_binary_operation<int8x16_t, int8x16_t, operation_le>();
-                break;
-            case i8x16_le_u:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_le>();
-                break;
-            case i8x16_ge_s:
-                run_binary_operation<int8x16_t, int8x16_t, operation_ge>();
-                break;
-            case i8x16_ge_u:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_ge>();
-                break;
-            case i16x8_eq:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_eq>();
-                break;
-            case i16x8_ne:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_ne>();
-                break;
-            case i16x8_lt_s:
-                run_binary_operation<int16x8_t, int16x8_t, operation_lt>();
-                break;
-            case i16x8_lt_u:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_lt>();
-                break;
-            case i16x8_gt_s:
-                run_binary_operation<int16x8_t, int16x8_t, operation_gt>();
-                break;
-            case i16x8_gt_u:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_gt>();
-                break;
-            case i16x8_le_s:
-                run_binary_operation<int16x8_t, int16x8_t, operation_le>();
-                break;
-            case i16x8_le_u:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_le>();
-                break;
-            case i16x8_ge_s:
-                run_binary_operation<int16x8_t, int16x8_t, operation_ge>();
-                break;
-            case i16x8_ge_u:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_ge>();
-                break;
-            case i32x4_eq:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_eq>();
-                break;
-            case i32x4_ne:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_ne>();
-                break;
-            case i32x4_lt_s:
-                run_binary_operation<int32x4_t, int32x4_t, operation_lt>();
-                break;
-            case i32x4_lt_u:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_lt>();
-                break;
-            case i32x4_gt_s:
-                run_binary_operation<int32x4_t, int32x4_t, operation_gt>();
-                break;
-            case i32x4_gt_u:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_gt>();
-                break;
-            case i32x4_le_s:
-                run_binary_operation<int32x4_t, int32x4_t, operation_le>();
-                break;
-            case i32x4_le_u:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_le>();
-                break;
-            case i32x4_ge_s:
-                run_binary_operation<int32x4_t, int32x4_t, operation_ge>();
-                break;
-            case i32x4_ge_u:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_ge>();
-                break;
-            case f32x4_eq:
-                run_binary_operation<float32x4_t, float32x4_t, operation_eq>();
-                break;
-            case f32x4_ne:
-                run_binary_operation<float32x4_t, float32x4_t, operation_ne>();
-                break;
-            case f32x4_lt:
-                run_binary_operation<float32x4_t, float32x4_t, operation_lt>();
-                break;
-            case f32x4_gt:
-                run_binary_operation<float32x4_t, float32x4_t, operation_gt>();
-                break;
-            case f32x4_le:
-                run_binary_operation<float32x4_t, float32x4_t, operation_le>();
-                break;
-            case f32x4_ge:
-                run_binary_operation<float32x4_t, float32x4_t, operation_ge>();
-                break;
-            case f64x2_eq:
-                run_binary_operation<float64x2_t, float64x2_t, operation_eq>();
-                break;
-            case f64x2_ne:
-                run_binary_operation<float64x2_t, float64x2_t, operation_ne>();
-                break;
-            case f64x2_lt:
-                run_binary_operation<float64x2_t, float64x2_t, operation_lt>();
-                break;
-            case f64x2_gt:
-                run_binary_operation<float64x2_t, float64x2_t, operation_gt>();
-                break;
-            case f64x2_le:
-                run_binary_operation<float64x2_t, float64x2_t, operation_le>();
-                break;
-            case f64x2_ge:
-                run_binary_operation<float64x2_t, float64x2_t, operation_ge>();
-                break;
-            case v128_not:
-                run_unary_operation<uint128_t, operation_not>();
-                break;
-            case v128_and:
-                run_binary_operation<uint128_t, uint128_t, operation_and>();
-                break;
-            case v128_andnot:
-                run_binary_operation<uint128_t, uint128_t, operation_andnot>();
-                break;
-            case v128_or:
-                run_binary_operation<uint128_t, uint128_t, operation_or>();
-                break;
-            case v128_xor:
-                run_binary_operation<uint128_t, uint128_t, operation_xor>();
-                break;
             case v128_bitselect: {
                 uint128_t mask = m_frame->stack.pop_as<uint128_t>();
                 uint128_t falseVector = m_frame->stack.pop_as<uint128_t>();
@@ -897,9 +660,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->stack.push((trueVector & mask) | (falseVector & ~mask));
                 break;
             }
-            case v128_any_true:
-                m_frame->stack.push((uint32_t)(m_frame->stack.pop_as<uint128_t>() != 0));
-                break;
             case v128_load8_lane:
                 run_load_lane_instruction<uint8x16_t, uint8_t, uint8_t>(instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
@@ -923,336 +683,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 break;
             case v128_store64_lane:
                 run_store_lane_instruction<uint64x2_t, uint64_t, uint64_t>(instruction.get_arguments<LoadStoreLaneArguments>());
-                break;
-            case i8x16_abs:
-                run_unary_operation<int8x16_t, operation_vector_abs>();
-                break;
-            case i8x16_neg:
-                run_unary_operation<int8x16_t, operation_neg>();
-                break;
-            case i8x16_all_true:
-                run_unary_operation<uint8x16_t, operation_all_true>();
-                break;
-            case i8x16_bitmask:
-                run_unary_operation<uint8x16_t, operation_bitmask>();
-                break;
-            case f32x4_ceil:
-                run_unary_operation<float32x4_t, operation_vector_ceil>();
-                break;
-            case f32x4_floor:
-                run_unary_operation<float32x4_t, operation_vector_floor>();
-                break;
-            case f32x4_trunc:
-                run_unary_operation<float32x4_t, operation_vector_trunc>();
-                break;
-            case f32x4_nearest:
-                run_unary_operation<float32x4_t, operation_vector_nearest>();
-                break;
-            case i8x16_shl:
-                run_binary_operation<uint8x16_t, uint32_t, operation_vector_shl>();
-                break;
-            case i8x16_shr_s:
-                run_binary_operation<int8x16_t, uint32_t, operation_vector_shr>();
-                break;
-            case i8x16_shr_u:
-                run_binary_operation<uint8x16_t, uint32_t, operation_vector_shr>();
-                break;
-            case i8x16_add:
-                run_binary_operation<uint8x16_t, int8x16_t, operation_add>();
-                break;
-            case i8x16_sub:
-                run_binary_operation<uint8x16_t, int8x16_t, operation_sub>();
-                break;
-            case f64x2_ceil:
-                run_unary_operation<float64x2_t, operation_vector_ceil>();
-                break;
-            case f64x2_floor:
-                run_unary_operation<float64x2_t, operation_vector_floor>();
-                break;
-            case i8x16_min_s:
-                run_binary_operation<int8x16_t, int8x16_t, operation_vector_min>();
-                break;
-            case i8x16_min_u:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_vector_min>();
-                break;
-            case i8x16_max_s:
-                run_binary_operation<int8x16_t, int8x16_t, operation_vector_max>();
-                break;
-            case i8x16_max_u:
-                run_binary_operation<uint8x16_t, uint8x16_t, operation_vector_max>();
-                break;
-            case f64x2_trunc:
-                run_unary_operation<float64x2_t, operation_vector_trunc>();
-                break;
-            case i16x8_abs:
-                run_unary_operation<int16x8_t, operation_vector_abs>();
-                break;
-            case i16x8_neg:
-                run_unary_operation<int16x8_t, operation_neg>();
-                break;
-            case i16x8_q15mulr_sat_s:
-                run_binary_operation<int16x8_t, int16x8_t, operation_vector_q15mulr_sat>();
-                break;
-            case i16x8_all_true:
-                run_unary_operation<uint16x8_t, operation_all_true>();
-                break;
-            case i16x8_bitmask:
-                run_unary_operation<uint16x8_t, operation_bitmask>();
-                break;
-            case i16x8_extend_low_i8x16_s:
-                run_vector_extend<int8x16_t, int16x8_t, 0>();
-                break;
-            case i16x8_extend_high_i8x16_s:
-                run_vector_extend<int8x16_t, int16x8_t, 8>();
-                break;
-            case i16x8_extend_low_i8x16_u:
-                run_vector_extend<uint8x16_t, uint16x8_t, 0>();
-                break;
-            case i16x8_extend_high_i8x16_u:
-                run_vector_extend<uint8x16_t, uint16x8_t, 8>();
-                break;
-            case i16x8_shl:
-                run_binary_operation<uint16x8_t, uint32_t, operation_vector_shl>();
-                break;
-            case i16x8_shr_s:
-                run_binary_operation<int16x8_t, uint32_t, operation_vector_shr>();
-                break;
-            case i16x8_shr_u:
-                run_binary_operation<uint16x8_t, uint32_t, operation_vector_shr>();
-                break;
-            case i16x8_add:
-                run_binary_operation<uint16x8_t, int16x8_t, operation_add>();
-                break;
-            case i16x8_sub:
-                run_binary_operation<uint16x8_t, int16x8_t, operation_sub>();
-                break;
-            case f64x2_nearest:
-                run_unary_operation<float64x2_t, operation_vector_nearest>();
-                break;
-            case i16x8_mul:
-                run_binary_operation<uint16x8_t, int16x8_t, operation_mul>();
-                break;
-            case i16x8_min_s:
-                run_binary_operation<int16x8_t, int16x8_t, operation_vector_min>();
-                break;
-            case i16x8_min_u:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_vector_min>();
-                break;
-            case i16x8_max_s:
-                run_binary_operation<int16x8_t, int16x8_t, operation_vector_max>();
-                break;
-            case i16x8_max_u:
-                run_binary_operation<uint16x8_t, uint16x8_t, operation_vector_max>();
-                break;
-            case i16x8_extmul_low_i8x16_s:
-                run_vector_extend_multiply<int8x16_t, int16x8_t, 0>();
-                break;
-            case i16x8_extmul_high_i8x16_s:
-                run_vector_extend_multiply<int8x16_t, int16x8_t, 8>();
-                break;
-            case i16x8_extmul_low_i8x16_u:
-                run_vector_extend_multiply<uint8x16_t, uint16x8_t, 0>();
-                break;
-            case i16x8_extmul_high_i8x16_u:
-                run_vector_extend_multiply<uint8x16_t, uint16x8_t, 8>();
-                break;
-            case i32x4_abs:
-                run_unary_operation<int32x4_t, operation_vector_abs>();
-                break;
-            case i32x4_neg:
-                run_unary_operation<int32x4_t, operation_neg>();
-                break;
-            case i32x4_all_true:
-                run_unary_operation<uint32x4_t, operation_all_true>();
-                break;
-            case i32x4_bitmask:
-                run_unary_operation<uint32x4_t, operation_bitmask>();
-                break;
-            case i32x4_extend_low_i16x8_s:
-                run_vector_extend<int16x8_t, int32x4_t, 0>();
-                break;
-            case i32x4_extend_high_i16x8_s:
-                run_vector_extend<int16x8_t, int32x4_t, 4>();
-                break;
-            case i32x4_extend_low_i16x8_u:
-                run_vector_extend<uint16x8_t, uint32x4_t, 0>();
-                break;
-            case i32x4_extend_high_i16x8_u:
-                run_vector_extend<uint16x8_t, uint32x4_t, 4>();
-                break;
-            case i32x4_shl:
-                run_binary_operation<uint32x4_t, uint32_t, operation_vector_shl>();
-                break;
-            case i32x4_shr_s:
-                run_binary_operation<int32x4_t, uint32_t, operation_vector_shr>();
-                break;
-            case i32x4_shr_u:
-                run_binary_operation<uint32x4_t, uint32_t, operation_vector_shr>();
-                break;
-            case i32x4_add:
-                run_binary_operation<uint32x4_t, int32x4_t, operation_add>();
-                break;
-            case i32x4_sub:
-                run_binary_operation<uint32x4_t, int32x4_t, operation_sub>();
-                break;
-            case i32x4_mul:
-                run_binary_operation<uint32x4_t, int32x4_t, operation_mul>();
-                break;
-            case i32x4_min_s:
-                run_binary_operation<int32x4_t, int32x4_t, operation_vector_min>();
-                break;
-            case i32x4_min_u:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_vector_min>();
-                break;
-            case i32x4_max_s:
-                run_binary_operation<int32x4_t, int32x4_t, operation_vector_max>();
-                break;
-            case i32x4_max_u:
-                run_binary_operation<uint32x4_t, uint32x4_t, operation_vector_max>();
-                break;
-            case i32x4_extmul_low_i16x8_s:
-                run_vector_extend_multiply<int16x8_t, int32x4_t, 0>();
-                break;
-            case i32x4_extmul_high_i16x8_s:
-                run_vector_extend_multiply<int16x8_t, int32x4_t, 4>();
-                break;
-            case i32x4_extmul_low_i16x8_u:
-                run_vector_extend_multiply<uint16x8_t, uint32x4_t, 0>();
-                break;
-            case i32x4_extmul_high_i16x8_u:
-                run_vector_extend_multiply<uint16x8_t, uint32x4_t, 4>();
-                break;
-            case i64x2_abs:
-                run_unary_operation<int64x2_t, operation_vector_abs>();
-                break;
-            case i64x2_neg:
-                run_unary_operation<int64x2_t, operation_neg>();
-                break;
-            case i64x2_all_true:
-                run_unary_operation<uint64x2_t, operation_all_true>();
-                break;
-            case i64x2_bitmask:
-                run_unary_operation<uint64x2_t, operation_bitmask>();
-                break;
-            case i64x2_extend_low_i32x4_s:
-                run_vector_extend<int32x4_t, int64x2_t, 0>();
-                break;
-            case i64x2_extend_high_i32x4_s:
-                run_vector_extend<int32x4_t, int64x2_t, 2>();
-                break;
-            case i64x2_extend_low_i32x4_u:
-                run_vector_extend<uint32x4_t, uint64x2_t, 0>();
-                break;
-            case i64x2_extend_high_i32x4_u:
-                run_vector_extend<uint32x4_t, uint64x2_t, 2>();
-                break;
-            case i64x2_shl:
-                run_binary_operation<uint64x2_t, uint32_t, operation_vector_shl>();
-                break;
-            case i64x2_shr_s:
-                run_binary_operation<int64x2_t, uint32_t, operation_vector_shr>();
-                break;
-            case i64x2_shr_u:
-                run_binary_operation<uint64x2_t, uint32_t, operation_vector_shr>();
-                break;
-            case i64x2_add:
-                run_binary_operation<uint64x2_t, int64x2_t, operation_add>();
-                break;
-            case i64x2_sub:
-                run_binary_operation<uint64x2_t, int64x2_t, operation_sub>();
-                break;
-            case i64x2_mul:
-                run_binary_operation<uint64x2_t, int64x2_t, operation_mul>();
-                break;
-            case i64x2_eq:
-                run_binary_operation<uint64x2_t, int64x2_t, operation_eq>();
-                break;
-            case i64x2_ne:
-                run_binary_operation<uint64x2_t, int64x2_t, operation_ne>();
-                break;
-            case i64x2_lt_s:
-                run_binary_operation<int64x2_t, int64x2_t, operation_lt>();
-                break;
-            case i64x2_gt_s:
-                run_binary_operation<int64x2_t, int64x2_t, operation_gt>();
-                break;
-            case i64x2_le_s:
-                run_binary_operation<int64x2_t, int64x2_t, operation_le>();
-                break;
-            case i64x2_ge_s:
-                run_binary_operation<int64x2_t, int64x2_t, operation_ge>();
-                break;
-            case i64x2_extmul_low_i32x4_s:
-                run_vector_extend_multiply<int32x4_t, int64x2_t, 0>();
-                break;
-            case i64x2_extmul_high_i32x4_s:
-                run_vector_extend_multiply<int32x4_t, int64x2_t, 2>();
-                break;
-            case i64x2_extmul_low_i32x4_u:
-                run_vector_extend_multiply<uint32x4_t, uint64x2_t, 0>();
-                break;
-            case i64x2_extmul_high_i32x4_u:
-                run_vector_extend_multiply<uint32x4_t, uint64x2_t, 2>();
-                break;
-            case f32x4_abs:
-                run_unary_operation<float32x4_t, operation_vector_abs>();
-                break;
-            case f32x4_neg:
-                run_unary_operation<float32x4_t, operation_neg>();
-                break;
-            case f32x4_add:
-                run_binary_operation<float32x4_t, float32x4_t, operation_add>();
-                break;
-            case f32x4_sub:
-                run_binary_operation<float32x4_t, float32x4_t, operation_sub>();
-                break;
-            case f32x4_mul:
-                run_binary_operation<float32x4_t, float32x4_t, operation_mul>();
-                break;
-            case f32x4_div:
-                run_binary_operation<float32x4_t, float32x4_t, operation_div>();
-                break;
-            case f32x4_min:
-                run_binary_operation<float32x4_t, float32x4_t, operation_vector_min>();
-                break;
-            case f32x4_max:
-                run_binary_operation<float32x4_t, float32x4_t, operation_vector_max>();
-                break;
-            case f32x4_pmin:
-                run_binary_operation<float32x4_t, float32x4_t, operation_vector_min>();
-                break;
-            case f32x4_pmax:
-                run_binary_operation<float32x4_t, float32x4_t, operation_vector_max>();
-                break;
-            case f64x2_abs:
-                run_unary_operation<float64x2_t, operation_vector_abs>();
-                break;
-            case f64x2_neg:
-                run_unary_operation<float64x2_t, operation_neg>();
-                break;
-            case f64x2_add:
-                run_binary_operation<float64x2_t, float64x2_t, operation_add>();
-                break;
-            case f64x2_sub:
-                run_binary_operation<float64x2_t, float64x2_t, operation_sub>();
-                break;
-            case f64x2_mul:
-                run_binary_operation<float64x2_t, float64x2_t, operation_mul>();
-                break;
-            case f64x2_div:
-                run_binary_operation<float64x2_t, float32x4_t, operation_div>();
-                break;
-            case f64x2_min:
-                run_binary_operation<float64x2_t, float64x2_t, operation_vector_min>();
-                break;
-            case f64x2_max:
-                run_binary_operation<float64x2_t, float64x2_t, operation_vector_max>();
-                break;
-            case f64x2_pmin:
-                run_binary_operation<float64x2_t, float64x2_t, operation_vector_min>();
-                break;
-            case f64x2_pmax:
-                run_binary_operation<float64x2_t, float64x2_t, operation_vector_max>();
                 break;
             default:
                 std::println(std::cerr, "Error: Unknown opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
@@ -1299,7 +729,6 @@ Ref<Module> VM::get_registered_module(const std::string& name)
 
 Value VM::run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction>& instructions, Type returnType)
 {
-    uint32_t ip = 0;
     ValueStack stack;
 
     for (const auto& instruction : instructions)
@@ -1388,7 +817,10 @@ void VM::run_load_instruction(const WasmFile::MemArg& memArg)
     ActualType value;
     memcpy(&value, &memory->data[address + memArg.offset], sizeof(ActualType));
 
-    m_frame->stack.push((StackType)value);
+    if constexpr (IsVector<ActualType>)
+        m_frame->stack.push(std::bit_cast<ToValueType<StackType>>(__builtin_convertvector(value, StackType)));
+    else
+        m_frame->stack.push(static_cast<StackType>(value));
 }
 
 template <typename ActualType, typename StackType>
@@ -1460,52 +892,6 @@ void VM::run_store_lane_instruction(const LoadStoreLaneArguments& args)
 
     ActualType value = vector[args.lane];
     memcpy(&memory->data[address + args.memArg.offset], &value, sizeof(ActualType));
-}
-
-template <IsVector VectorType, typename ActualType, typename LaneType>
-void VM::run_load_lanes_instruction(const WasmFile::MemArg& memArg)
-{
-    constexpr auto laneCount = sizeof(VectorType) / sizeof(VectorElement<VectorType>);
-    auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
-
-    uint32_t address = m_frame->stack.pop_as<uint32_t>();
-
-    if ((uint64_t)address + memArg.offset + (laneCount * sizeof(ActualType)) > memory->size * WASM_PAGE_SIZE)
-        throw Trap();
-
-    VectorType vector;
-    for (size_t i = 0; i < laneCount; i++)
-    {
-        ActualType value {};
-        memcpy(&memory->data[address + memArg.offset + (i * sizeof(ActualType))], &value, sizeof(ActualType));
-        vector[i] = (LaneType)value;
-    }
-    m_frame->stack.push(vector);
-}
-
-template <IsVector SourceVectorType, IsVector DestinationVectorType, size_t SourceOffset>
-void VM::run_vector_extend()
-{
-    // TODO: Find a SIMD instruction way to do this
-    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
-    SourceVectorType vector = m_frame->stack.pop_as<SourceVectorType>();
-    DestinationVectorType result {};
-    for (size_t i = 0; i < laneCount; i++)
-        result[i] = vector[i + SourceOffset];
-    m_frame->stack.push(result);
-}
-
-template <IsVector SourceVectorType, IsVector DestinationVectorType, size_t SourceOffset>
-void VM::run_vector_extend_multiply()
-{
-    // TODO: Find a SIMD instruction way to do this
-    constexpr auto laneCount = sizeof(DestinationVectorType) / sizeof(VectorElement<DestinationVectorType>);
-    SourceVectorType a = m_frame->stack.pop_as<SourceVectorType>();
-    SourceVectorType b = m_frame->stack.pop_as<SourceVectorType>();
-    DestinationVectorType result {};
-    for (size_t i = 0; i < laneCount; i++)
-        result[i] = a[i + SourceOffset] * b[i + SourceOffset];
-    m_frame->stack.push(result);
 }
 
 VM::ImportLocation VM::find_import(const std::string& environment, const std::string& name, WasmFile::ImportType importType)

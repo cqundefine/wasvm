@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <variant>
 
 struct Trap
 {
@@ -30,7 +29,7 @@ struct Reference
     ReferenceType type;
     uint32_t index;
 
-    Reference(ReferenceType type, uint32_t index)
+    constexpr Reference(ReferenceType type, uint32_t index)
         : type(type)
         , index(index)
     {
@@ -112,7 +111,7 @@ public:
     static_assert(sizeof(Type) == sizeof(uint64_t));
 
     // Default constructor
-    Value()
+    constexpr Value()
         : m_type(Type::UInt32)
     {
         new (&m_data) uint32_t(0); // Initialize with default value
@@ -120,7 +119,7 @@ public:
 
     // Constructor that uses the IsValueType concept
     template <IsValueType T>
-    Value(const T& value)
+    constexpr Value(const T& value)
         : m_type(get_type_for<ToValueType<T>>())
     {
         new (&m_data) ToValueType<T>((ToValueType<T>)value);
@@ -134,26 +133,30 @@ public:
 
     // Templated check if the variant holds a specific type
     template <IsValueType T>
-    bool holds_alternative() const
+    constexpr bool holds_alternative() const
     {
         return m_type == get_type_for<T>();
     }
 
     // Access the stored value as a reference (throws if type doesn't match)
     template <IsValueType T>
-    T& get()
+    constexpr T& get()
     {
+#ifdef DEBUG_BUILD
         if (!holds_alternative<T>())
             throw std::bad_variant_access();
+#endif
         return *reinterpret_cast<T*>(&m_data);
     }
 
     // Access the stored value as a const reference (throws if type doesn't match)
     template <IsValueType T>
-    const T& get() const
+    constexpr const T& get() const
     {
+#ifdef DEBUG_BUILD
         if (!holds_alternative<T>())
             throw std::bad_variant_access();
+#endif
         return *reinterpret_cast<const T*>(&m_data);
     }
 

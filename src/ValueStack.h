@@ -3,6 +3,7 @@
 #include <Type.h>
 #include <Value.h>
 #include <iostream>
+#include <span>
 
 class ValueStack
 {
@@ -12,7 +13,7 @@ public:
         m_stack.push_back(value);
     }
 
-    void push_values(std::vector<Value> values)
+    void push_values(std::span<Value> values)
     {
         for (const auto& value : values)
             push(value);
