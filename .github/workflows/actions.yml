@@ -1,0 +1,32 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [ master ]
+jobs:
+  tests-linux:
+    strategy:
+      matrix:
+        arch: [x64]
+    runs-on: ${{ matrix.arch == 'x64' && 'ubuntu-24.04'}}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc-14 g++-14 cmake ninja-build python3 wget tar git
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+      - name: build the vm
+        run: |
+          mkdir build
+          cd build
+          cmake .. -GNinja -DCMAKE_C_COMPILER=clang-21 -DCMAKE_CXX_COMPILER=clang++-21
+          ninja
+      - name: prepare tests
+        run: |
+          ./make_tests.py
+      - name: run tests
+        run: |
+          ./run_tests.py

@@ -3,9 +3,9 @@ build
 *.js
 wasvm
 random
-tests
 libsodium
 .vscode
 spec
-!tests/spectest.wat
+test_data
 .cache
+jit.bin

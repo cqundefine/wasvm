@@ -10,8 +10,10 @@ RED = "\u001b[38;5;9m"
 DARK_RED = "\u001b[38;5;1m"
 RESET = "\u001b[0m"
 
-TESTS_PATH = "tests/"
-assert TESTS_PATH.endswith("/")
+TEST_DATA_PATH = "test_data"
+TESTSUITE_PROCESSED_PATH = os.path.join(TEST_DATA_PATH, "testsuite-processed")
+if not TESTSUITE_PROCESSED_PATH.endswith("/"):
+    TESTSUITE_PROCESSED_PATH += "/"
 
 def colored(text: str, color: str) -> str:
     return f"{color}{text}{RESET}"
@@ -26,15 +28,15 @@ vm_error = 0
 crashes = []
 
 tests: list[str] = []
-for root, dirs, files in os.walk(TESTS_PATH):
-    if root == TESTS_PATH:
+for root, dirs, files in os.walk(TESTSUITE_PROCESSED_PATH):
+    if root == TESTSUITE_PROCESSED_PATH:
         continue
-    tests.append(root.removeprefix(TESTS_PATH))
+    tests.append(root.removeprefix(TESTSUITE_PROCESSED_PATH))
 tests.sort()
 
 for filename in tests:
-    if os.path.exists(os.path.join(TESTS_PATH, filename, filename.split("/")[-1] + ".json")):
-        process = subprocess.run(["./wasvm", "-t", filename], capture_output=True)
+    if os.path.exists(os.path.join(TESTSUITE_PROCESSED_PATH, filename, filename.split("/")[-1] + ".json")):
+        process = subprocess.run(["build/wasvm", "-t", filename], capture_output=True)
         if process.returncode != 0:
             print(f"{filename:<50} {colored("vm crashed", DARK_RED)}")
             crashes.append(filename)

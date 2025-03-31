@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+
+TEST_DATA_PATH = "test_data"
+
+TESTSUITE_SOURCE_PATH = os.path.join(TEST_DATA_PATH, "testsuite")
+TESTSUITE_PROCESSED_PATH = os.path.join(TEST_DATA_PATH, "testsuite-processed")
+
+WABT_VERSION = "1.0.36"
+WABT_URL = f"https://github.com/WebAssembly/wabt/releases/download/{WABT_VERSION}/wabt-{WABT_VERSION}-ubuntu-20.04.tar.gz"
+WABT_DOWNLOADED_FILE = os.path.join(TEST_DATA_PATH, f"wabt-{WABT_VERSION}-ubuntu-20.04.tar.gz")
+WABT_DOWNLOADED_DIR = os.path.join(TEST_DATA_PATH, f"wabt-{WABT_VERSION}")
+
+WABT_PATH = os.path.join(TEST_DATA_PATH, "wabt")
+WAST2JSON_PATH = os.path.join(WABT_PATH, "bin", "wast2json")
+WAT2WASM_PATH = os.path.join(WABT_PATH, "bin", "wat2wasm")
+
+SPECTEST_PATH = os.path.join(TEST_DATA_PATH, "spectest.wasm")
+
+ENABLED_PROPOSALS = [
+    # [ "annotations", "--enable-annotations" ],
+    # [ "exception-handling", "--enable-exceptions" ],
+    # [ "extended-const", "--enable-extended-const" ],
+    # [ "function-references", "--enable-function-references" ],
+    # [ "gc", "--enable-gc" ],
+    # [ "memory64", "--enable-memory64" ],
+    # [ "multi-memory", "--enable-multi-memory" ],
+    # [ "relaxed-simd", "--enable-relaxed-simd" ],
+    # [ "tail-call", "--enable-tail-call" ],
+    # [ "threads", "--enable-threads" ],
+]
+
+ENABLE_SIMD = True
+
+def check_executable(exe: str):
+    try:
+        subprocess.run([exe, "--version"], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        print(f"{exe} is not installed")
+        exit(1)
+
+check_executable("wget")
+check_executable("tar")
+check_executable("git")
+
+os.makedirs(TEST_DATA_PATH, exist_ok=True)
+
+if not os.path.exists(WABT_PATH):
+    subprocess.run(["wget", "-P", TEST_DATA_PATH, WABT_URL])
+    subprocess.run(["tar", "-xvf", WABT_DOWNLOADED_FILE, "-C", TEST_DATA_PATH])
+    subprocess.run(["mv", WABT_DOWNLOADED_DIR, WABT_PATH])
+
+if not os.path.exists(TESTSUITE_SOURCE_PATH):
+    subprocess.run(["git", "clone", "https://github.com/WebAssembly/testsuite", TESTSUITE_SOURCE_PATH, "--depth=1"])
+
+if not os.path.exists(SPECTEST_PATH):
+    subprocess.run([WAT2WASM_PATH, "spectest.wat", "-o", SPECTEST_PATH])
+
+for file in os.listdir(TESTSUITE_SOURCE_PATH):
+    if not file.endswith(".wast"):
+        continue
+
+    if not ENABLE_SIMD and file.startswith("simd_"):
+        continue
+
+    test_name = file.removesuffix(".wast")
+    test_directory = os.path.join(TESTSUITE_PROCESSED_PATH, test_name)
+    wast_directory = os.path.join(TESTSUITE_SOURCE_PATH, file)
+
+    os.makedirs(test_directory)
+    subprocess.run([WAST2JSON_PATH, wast_directory, f"--output={os.path.join(test_directory, f'{test_name}.json')}"])
+
+for proposal, flag in ENABLED_PROPOSALS:
+    proposal_path = os.path.join(TESTSUITE_SOURCE_PATH, "proposals", proposal)
+    for file in os.listdir(proposal_path):
+        if not file.endswith(".wast"):
+            continue
+
+        test_name = file.removesuffix(".wast")
+        test_directory = os.path.join(TESTSUITE_PROCESSED_PATH, "proposals", proposal, test_name)
+        wast_directory = os.path.join(TESTSUITE_SOURCE_PATH, "proposals", proposal, file)
+
+        os.makedirs(test_directory)
+        subprocess.run([WAST2JSON_PATH, wast_directory, flag, f"--output={os.path.join(test_directory, f'{test_name}.json')}"])

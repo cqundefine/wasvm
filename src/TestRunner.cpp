@@ -123,6 +123,7 @@ bool compare_values(Value a, Value b)
     }
 
     assert(false);
+    std::unreachable();
 }
 
 std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string& path, uint32_t line, nlohmann::json action)
@@ -191,27 +192,20 @@ TestStats run_tests(const std::string& path)
 {
     TestStats stats {};
 
-    chdir("tests");
-
     try
     {
-        FileStream specTestStream("spectest.wasm");
+        FileStream specTestStream("test_data/spectest.wasm");
         auto specTest = WasmFile::WasmFile::read_from_stream(specTestStream);
         VM::register_module("spectest", VM::load_module(specTest, true));
     }
-    catch (WasmFile::InvalidWASMException e)
-    {
-        std::println("Failed to load spectest wasm");
-        stats.vm_error = true;
-        return stats;
-    }
-    catch (Trap e)
+    catch (...)
     {
         std::println("Failed to load spectest wasm");
         stats.vm_error = true;
         return stats;
     }
 
+    chdir("test_data/testsuite-processed");
     chdir(path.c_str());
 
     std::filesystem::path fsPath(path);

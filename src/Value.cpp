@@ -2,6 +2,7 @@
 #include <Value.h>
 #include <cassert>
 #include <format>
+#include <utility>
 
 template <typename T>
 const char* value_type_name = "invalid";
@@ -44,5 +45,7 @@ std::string value_to_string(Value value)
         else
             return std::format("{}({})", get_type_name(get_value_type(value)), index);
     }
+
     assert(false);
+    std::unreachable();
 }
