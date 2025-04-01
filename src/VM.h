@@ -19,7 +19,6 @@ public:
     {
         std::vector<Value> locals;
         ValueStack stack;
-        std::vector<Label> label_stack;
         uint32_t ip = 0;
         Ref<Module> mod;
 
@@ -60,7 +59,7 @@ private:
     static void run_load_instruction(const WasmFile::MemArg& memArg);
     template <typename ActualType, typename StackType>
     static void run_store_instruction(const WasmFile::MemArg& memArg);
-    static void branch_to_label(uint32_t index);
+    static void branch_to_label(Label label);
     static void call_function(Ref<Function> function);
 
     template <IsVector VectorType, typename ActualType, typename LaneType>

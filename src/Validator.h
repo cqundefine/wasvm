@@ -8,7 +8,7 @@ public:
     Validator(Ref<WasmFile::WasmFile> wasmFile);
 
 private:
-    void validate_function(const WasmFile::FunctionType& type, const WasmFile::Code& code);
+    void validate_function(const WasmFile::FunctionType& type, WasmFile::Code& code);
     void validate_constant_expression(const std::vector<Instruction>& instructions, Type expectedReturnType, bool globalRestrictions);
     Value run_global_restricted_constant_expression(const std::vector<Instruction>& instructions);
 

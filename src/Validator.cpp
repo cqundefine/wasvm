@@ -75,9 +75,10 @@ struct ValidatorLabel
     std::vector<Type> paramTypes;
     ValidatorLabelType type;
     bool unreachable;
+    Label label;
 };
 
-class ValidatorValueStack
+class ValidatorStack
 {
 public:
     void push(ValidatorType type)
@@ -113,17 +114,32 @@ public:
         return static_cast<uint32_t>(m_stack.size());
     }
 
-    // FIXME: This needs a refactor and probably shouldn't be here
-    ValidatorLabel& last_label()
+    void push_label(const ValidatorLabel& label)
     {
-        assert(!labels.empty());
-        return labels[labels.size() - 1];
+        m_labels.push_back(std::move(label));
     }
 
-    std::vector<ValidatorLabel> labels;
+    void pop_label()
+    {
+        assert(!m_labels.empty());
+        m_labels.pop_back();
+    }
+
+    ValidatorLabel get_label(uint32_t index)
+    {
+        VALIDATION_ASSERT(index + 1 <= m_labels.size());
+        return m_labels[m_labels.size() - index - 1];
+    }
+
+    ValidatorLabel& last_label()
+    {
+        assert(!m_labels.empty());
+        return m_labels[m_labels.size() - 1];
+    }
 
 private:
     std::vector<ValidatorType> m_stack;
+    std::vector<ValidatorLabel> m_labels;
 };
 
 Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
@@ -264,15 +280,19 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
     }
 }
 
-void Validator::validate_function(const WasmFile::FunctionType& functionType, const WasmFile::Code& code)
+void Validator::validate_function(const WasmFile::FunctionType& functionType, WasmFile::Code& code)
 {
-    ValidatorValueStack stack;
-    stack.labels.push_back(ValidatorLabel {
+    ValidatorStack stack;
+    stack.push_label(ValidatorLabel {
         .stackHeight = 0,
         .returnTypes = functionType.returns,
         .paramTypes = functionType.params,
         .type = ValidatorLabelType::Entry,
-        .unreachable = false });
+        .unreachable = false,
+        .label = Label {
+            .continuation = static_cast<uint32_t>(code.instructions.size()),
+            .arity = static_cast<uint32_t>(functionType.returns.size()),
+            .stackHeight = 0 } });
 
     std::vector<Type> locals;
 
@@ -329,7 +349,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
         stack.expect(Type::i32);
     };
 
-    for (const auto& instruction : code.instructions)
+    for (auto& instruction : code.instructions)
     {
         switch (instruction.opcode)
         {
@@ -344,16 +364,21 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
             case Opcode::loop: {
                 const auto& arguments = instruction.get_arguments<BlockLoopArguments>();
                 const auto& params = arguments.blockType.get_param_types(m_wasmFile);
+                instruction.arguments = {};
+
+                Label label = arguments.label;
+                label.stackHeight = static_cast<uint32_t>(stack.size() - arguments.blockType.get_param_types(m_wasmFile).size());
 
                 for (const auto type : std::views::reverse(params))
                     stack.expect(type);
 
-                stack.labels.push_back(ValidatorLabel {
+                stack.push_label(ValidatorLabel {
                     .stackHeight = stack.size(),
                     .returnTypes = arguments.blockType.get_return_types(m_wasmFile),
                     .paramTypes = params,
                     .type = instruction.opcode == Opcode::loop ? ValidatorLabelType::Loop : ValidatorLabelType::Block,
-                    .unreachable = false });
+                    .unreachable = false,
+                    .label = label });
 
                 for (const auto type : params)
                     stack.push(type);
@@ -370,12 +395,13 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 for (const auto type : std::views::reverse(params))
                     stack.expect(type);
 
-                stack.labels.push_back(ValidatorLabel {
+                stack.push_label(ValidatorLabel {
                     .stackHeight = stack.size(),
                     .returnTypes = arguments.blockType.get_return_types(m_wasmFile),
                     .paramTypes = params,
                     .type = ValidatorLabelType::If,
-                    .unreachable = false });
+                    .unreachable = false,
+                    .label = arguments.endLabel });
 
                 for (const auto type : params)
                     stack.push(type);
@@ -411,12 +437,12 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 for (const auto type : label.returnTypes)
                     stack.push(type);
 
-                stack.labels.pop_back();
+                stack.pop_label();
                 break;
             }
             case Opcode::br: {
-                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() + 1 <= stack.labels.size());
-                const auto& label = stack.labels[stack.labels.size() - instruction.get_arguments<uint32_t>() - 1];
+                const auto& label = stack.get_label(instruction.get_arguments<uint32_t>());
+                instruction.arguments = label.label;
 
                 if (label.type != ValidatorLabelType::Loop)
                     for (const auto type : std::views::reverse(label.returnTypes))
@@ -427,8 +453,8 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 break;
             }
             case Opcode::br_if: {
-                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() + 1 <= stack.labels.size());
-                const auto& label = stack.labels[stack.labels.size() - instruction.get_arguments<uint32_t>() - 1];
+                const auto& label = stack.get_label(instruction.get_arguments<uint32_t>());
+                instruction.arguments = label.label;
 
                 stack.expect(Type::i32);
 
@@ -445,13 +471,20 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
                 break;
             }
             case Opcode::br_table: {
-                const auto& arguments = instruction.get_arguments<BranchTableArguments>();
+                const auto& arguments = instruction.get_arguments<BranchTableArgumentsPrevalidated>();
 
                 stack.expect(Type::i32);
 
-                VALIDATION_ASSERT(arguments.defaultLabel + 1 <= stack.labels.size());
+                const auto& defaultLabel = stack.get_label(arguments.defaultLabel);
+
+                std::vector<Label> labels;
                 for (const auto& labelIndex : arguments.labels)
-                    VALIDATION_ASSERT(labelIndex + 1 <= stack.labels.size());
+                    labels.push_back(stack.get_label(labelIndex).label);
+
+                instruction.arguments = BranchTableArguments {
+                    .labels = std::move(labels),
+                    .defaultLabel = defaultLabel.label
+                };
 
                 stack.last_label().unreachable = true;
                 stack.erase(stack.last_label().stackHeight, 0);
@@ -816,13 +849,9 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, co
 
 void Validator::validate_constant_expression(const std::vector<Instruction>& instructions, Type expectedReturnType, bool globalRestrictions)
 {
-    ValidatorValueStack stack;
-    stack.labels.push_back(ValidatorLabel {
-        .stackHeight = 0,
-        .returnTypes = { expectedReturnType },
-        .paramTypes = {},
-        .type = ValidatorLabelType::Entry,
-        .unreachable = false });
+    ValidatorStack stack;
+    // TODO: This is a hack to make the validator work with the current code
+    stack.push_label(ValidatorLabel {});
 
     for (size_t ip = 0; ip < instructions.size(); ip++)
     {
@@ -911,7 +940,5 @@ Value Validator::run_global_restricted_constant_expression(const std::vector<Ins
     }
 
     assert(stack.size() == 1);
-
-    Value value = stack.pop();
-    return value;
+    return stack.pop();
 }

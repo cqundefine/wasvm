@@ -11,12 +11,10 @@ struct Trap
 
 struct Label
 {
-    size_t continuation;
+    uint32_t continuation;
     uint32_t arity;
-    size_t stackHeight;
+    uint32_t stackHeight;
 };
-// This is required as we store RSP in stackHeight while running JIT
-static_assert(sizeof(size_t) == sizeof(void*));
 
 enum class ReferenceType
 {

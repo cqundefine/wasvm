@@ -7,26 +7,26 @@
 
 __attribute((sysv_abi)) void block(size_t continuation, uint32_t arity, size_t stackHeight)
 {
-    VM::frame()->label_stack.push_back(Label {
-        .continuation = continuation,
-        .arity = arity,
-        .stackHeight = stackHeight });
+    // VM::frame()->label_stack.push_back(Label {
+    //     .continuation = continuation,
+    //     .arity = arity,
+    //     .stackHeight = stackHeight });
 }
 
 __attribute((sysv_abi)) void end()
 {
-    VM::frame()->label_stack.pop_back();
+    // VM::frame()->label_stack.pop_back();
 }
 
 __attribute((sysv_abi)) void branch_to_label(uint32_t index)
 {
     // FIXME: Does this need to be a loop
-    Label label;
-    for (uint32_t i = 0; i < index + 1; i++)
-    {
-        label = VM::frame()->label_stack.back();
-        VM::frame()->label_stack.pop_back();
-    }
+    // Label label;
+    // for (uint32_t i = 0; i < index + 1; i++)
+    // {
+    //     label = VM::frame()->label_stack.back();
+    //     VM::frame()->label_stack.pop_back();
+    // }
 }
 
 JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFile)

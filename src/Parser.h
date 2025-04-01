@@ -22,10 +22,16 @@ struct IfArguments
     std::optional<uint32_t> elseLocation;
 };
 
-struct BranchTableArguments
+struct BranchTableArgumentsPrevalidated
 {
     std::vector<uint32_t> labels;
     uint32_t defaultLabel;
+};
+
+struct BranchTableArguments
+{
+    std::vector<Label> labels;
+    Label defaultLabel;
 };
 
 struct CallIndirectArguments
@@ -71,7 +77,7 @@ struct NoneArguments
 struct Instruction
 {
     Opcode opcode;
-    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArguments, CallIndirectArguments, MemoryInitArguments, MemoryCopyArguments, TableInitArguments, TableCopyArguments, LoadStoreLaneArguments, std::vector<uint8_t>, WasmFile::MemArg, Type, Label, uint8_t, uint32_t, uint64_t, float, double, uint128_t, uint8x16_t> arguments;
+    std::variant<NoneArguments, BlockLoopArguments, IfArguments, BranchTableArgumentsPrevalidated, BranchTableArguments, CallIndirectArguments, MemoryInitArguments, MemoryCopyArguments, TableInitArguments, TableCopyArguments, LoadStoreLaneArguments, std::vector<uint8_t>, WasmFile::MemArg, Type, Label, uint8_t, uint32_t, uint64_t, float, double, uint128_t, uint8x16_t> arguments;
 
     template <typename T>
     T& get_arguments()

@@ -201,11 +201,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
         }
     }
 
-    m_frame->label_stack.push_back(Label {
-        .continuation = static_cast<uint32_t>(function->code.instructions.size()),
-        .arity = static_cast<uint32_t>(function->type.returns.size()),
-        .stackHeight = 0 });
-
     while (m_frame->ip < function->code.instructions.size())
     {
         const Instruction& instruction = function->code.instructions[m_frame->ip++];
@@ -216,56 +211,40 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             case unreachable:
                 throw Trap();
             case nop:
-                break;
             case block:
-            case loop: {
-                const auto& arguments = instruction.get_arguments<BlockLoopArguments>();
-                Label label = arguments.label;
-                label.stackHeight = static_cast<uint32_t>(m_frame->stack.size() - arguments.blockType.get_param_types(mod->wasmFile).size());
-                m_frame->label_stack.push_back(label);
+            case loop:
                 break;
-            }
             case if_: {
                 const auto& arguments = instruction.get_arguments<IfArguments>();
 
                 uint32_t value = m_frame->stack.pop_as<uint32_t>();
 
-                Label label = arguments.endLabel;
-                label.stackHeight = static_cast<uint32_t>(m_frame->stack.size() - arguments.blockType.get_param_types(mod->wasmFile).size());
-
-                if (arguments.elseLocation.has_value())
+                if (value == 0)
                 {
-                    if (value == 0)
+                    if (arguments.elseLocation.has_value())
                         m_frame->ip = arguments.elseLocation.value() + 1;
-                    m_frame->label_stack.push_back(label);
-                }
-                else
-                {
-                    if (value != 0)
-                        m_frame->label_stack.push_back(label);
                     else
-                        m_frame->ip = label.continuation;
+                        m_frame->ip = arguments.endLabel.continuation;
                 }
                 break;
             }
             case else_:
                 m_frame->ip = instruction.get_arguments<Label>().continuation;
-                [[fallthrough]];
+                break;
             case end:
-                m_frame->label_stack.pop_back();
                 break;
             case br:
-                branch_to_label(instruction.get_arguments<uint32_t>());
+                branch_to_label(instruction.get_arguments<Label>());
                 break;
             case br_if:
                 if (m_frame->stack.pop_as<uint32_t>() != 0)
-                    branch_to_label(instruction.get_arguments<uint32_t>());
+                    branch_to_label(instruction.get_arguments<Label>());
                 break;
             case br_table: {
                 const auto& arguments = instruction.get_arguments<BranchTableArguments>();
-                uint32_t i = m_frame->stack.pop_as<uint32_t>();
-                if (i < arguments.labels.size())
-                    branch_to_label(arguments.labels[i]);
+                uint32_t index = m_frame->stack.pop_as<uint32_t>();
+                if (index < arguments.labels.size())
+                    branch_to_label(arguments.labels[index]);
                 else
                     branch_to_label(arguments.defaultLabel);
                 break;
@@ -837,16 +816,8 @@ void VM::run_store_instruction(const WasmFile::MemArg& memArg)
     memcpy(&memory->data[address + memArg.offset], &value, sizeof(ActualType));
 }
 
-void VM::branch_to_label(uint32_t index)
+void VM::branch_to_label(Label label)
 {
-    // FIXME: Does this need to be a loop
-    Label label;
-    for (uint32_t i = 0; i < index + 1; i++)
-    {
-        label = m_frame->label_stack.back();
-        m_frame->label_stack.pop_back();
-    }
-
     m_frame->stack.erase(label.stackHeight, label.arity);
     m_frame->ip = label.continuation;
 }
