@@ -3,33 +3,16 @@
 #include <Opcode.h>
 #include <Parser.h>
 #include <VM.h>
+#include <cstring>
 #include <utility>
 
-__attribute((sysv_abi)) void block(size_t continuation, uint32_t arity, size_t stackHeight)
+__attribute((sysv_abi)) void prepare_branch_stack(uint64_t currentStack, uint64_t oldStack, uint32_t arity)
 {
-    // VM::frame()->label_stack.push_back(Label {
-    //     .continuation = continuation,
-    //     .arity = arity,
-    //     .stackHeight = stackHeight });
+    oldStack -= arity * 16;
+    memcpy((void*)currentStack, (void*)oldStack, arity * 16);
 }
 
-__attribute((sysv_abi)) void end()
-{
-    // VM::frame()->label_stack.pop_back();
-}
-
-__attribute((sysv_abi)) void branch_to_label(uint32_t index)
-{
-    // FIXME: Does this need to be a loop
-    // Label label;
-    // for (uint32_t i = 0; i < index + 1; i++)
-    // {
-    //     label = VM::frame()->label_stack.back();
-    //     VM::frame()->label_stack.pop_back();
-    // }
-}
-
-JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFile)
+JITCode Compiler::compile(Ref<const Function> function, Ref<WasmFile::WasmFile> wasmFile)
 {
     m_jit = {};
     m_function = function;
@@ -46,37 +29,63 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
         throw JITCompilationException();
     }
 
+    std::map<uint32_t, JIT::Label> labels;
+
+    m_jit.begin();
+
     m_jit.mov64(JIT::Operand::Register(LOCALS_ARRAY_REGISTER), JIT::Operand::Register(ARG0));
     m_jit.mov64(JIT::Operand::Register(RETURN_VALUE_REGISTER), JIT::Operand::Register(ARG1));
 
-    for (const auto& instruction : function->code.instructions)
+    m_jit.mov64(JIT::Operand::Register(BEGIN_STACK_POINTER), JIT::Operand::Register(STACK_POINTER));
+
+    for (size_t i = 0; i < function->code.instructions.size(); i++)
     {
+        const auto& instruction = function->code.instructions[i];
+
+        if (labels.contains(i))
+            m_jit.update_label(labels[i]);
+        else
+            labels[i] = m_jit.make_label();
+
         switch (instruction.opcode)
         {
             case Opcode::nop:
                 m_jit.nop();
                 break;
             case Opcode::block:
-            case Opcode::loop: {
-                const auto& arguments = instruction.get_arguments<BlockLoopArguments>();
+            case Opcode::loop:
+                break;
+            case Opcode::end:
+                break;
+            case Opcode::br: {
+                const auto& label = instruction.get_arguments<Label>();
 
-                // TODO: continuation = rip
+                m_jit.mov64(JIT::Operand::Register(ARG1), JIT::Operand::Register(STACK_POINTER));
+                m_jit.mov64(JIT::Operand::Register(ARG2), JIT::Operand::Immediate(label.arity));
 
-                // arity = label.arity
-                m_jit.mov32(JIT::Operand::Register(ARG1), JIT::Operand::Immediate(arguments.label.arity));
+                m_jit.mov64(JIT::Operand::Register(STACK_POINTER), JIT::Operand::Register(BEGIN_STACK_POINTER));
 
-                // stackHeight = rsp - paramCount
-                m_jit.mov64(JIT::Operand::Register(ARG2), JIT::Operand::Register(JIT::Reg::RSP));
-                m_jit.sub64(JIT::Operand::Register(ARG2), JIT::Operand::Immediate(arguments.blockType.get_param_types(function->mod->wasmFile).size() * 2 * sizeof(uint64_t)));
+                m_jit.mov64(JIT::Operand::Register(GPR0), JIT::Operand::Immediate(label.stackHeight));
+                m_jit.mov64(JIT::Operand::Register(GPR1), JIT::Operand::Immediate(16));
+                m_jit.mul64(JIT::Operand::Register(GPR0), JIT::Operand::Register(GPR1));
 
-                m_jit.native_call((void*)block);
+                m_jit.sub64(JIT::Operand::Register(STACK_POINTER), JIT::Operand::Register(GPR0));
+
+                m_jit.mov64(JIT::Operand::Register(ARG0), JIT::Operand::Register(STACK_POINTER));
+                m_jit.native_call((void*)prepare_branch_stack);
+
+                if (labels.contains(label.continuation))
+                {
+                    m_jit.jump(labels[label.continuation]);
+                }
+                else
+                {
+                    labels[label.continuation] = JIT::Label {};
+                    m_jit.jump(labels[label.continuation]);
+                }
+
                 break;
             }
-            case Opcode::end:
-                m_jit.native_call((void*)end);
-                break;
-            case Opcode::br:
-
             case Opcode::local_get:
                 get_local(instruction.get_arguments<uint32_t>());
                 break;
@@ -125,6 +134,9 @@ JITCode Compiler::compile(Ref<Function> function, Ref<WasmFile::WasmFile> wasmFi
         m_jit.mov64(JIT::Operand::MemoryBaseAndOffset(RETURN_VALUE_REGISTER, Value::type_offset()), JIT::Operand::Register(FUNCTION_TEMPORARY));
     }
     m_jit.exit();
+
+    for (auto& label : labels)
+        label.second.link(m_jit);
 
     return (JITCode)m_jit.build();
 }

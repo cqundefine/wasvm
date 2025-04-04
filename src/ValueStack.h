@@ -54,7 +54,7 @@ public:
             values.push_back(pop());
 
         std::reverse(values.begin(), values.end());
-        return values;
+        return std::move(values);
     }
 
     Value peek()

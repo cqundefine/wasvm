@@ -115,8 +115,42 @@ void JIT::sub64(Operand dst, Operand src)
     assert(false);
 }
 
+void JIT::mul64(Operand dst, Operand src)
+{
+    if (src.is_register_or_memory() && dst.type == Operand::Type::Register && dst.reg == Reg::RAX)
+    {
+        rex(dst, true);
+        write8(0xF7); // mul r/m64
+        mod_rm(dst, 4);
+        return;
+    }
+
+    assert(false);
+}
+
+void JIT::begin()
+{
+    push64(Operand::Register(JIT::Reg::RBX));
+    push64(Operand::Register(JIT::Reg::R12));
+    push64(Operand::Register(JIT::Reg::R13));
+    push64(Operand::Register(JIT::Reg::R14));
+    push64(Operand::Register(JIT::Reg::R15));
+
+    push64(Operand::Register(JIT::Reg::RBP));
+    mov64(Operand::Register(JIT::Reg::RBP), Operand::Register(JIT::Reg::RSP));
+    sub64(Operand::Register(JIT::Reg::RSP), Operand::Immediate(0x8));
+}
+
 void JIT::exit()
 {
+    write8(0xc9); // leave
+
+    pop64(Operand::Register(JIT::Reg::R15));
+    pop64(Operand::Register(JIT::Reg::R14));
+    pop64(Operand::Register(JIT::Reg::R13));
+    pop64(Operand::Register(JIT::Reg::R12));
+    pop64(Operand::Register(JIT::Reg::RBX));
+
     write8(0xc3); // ret
 }
 
@@ -147,6 +181,27 @@ void JIT::pop64(Operand arg)
 void JIT::nop()
 {
     write8(0x90);
+}
+
+JIT::Label JIT::make_label()
+{
+    return Label {
+        .offset_of_label_in_instruction_stream = code.size(),
+        .jump_slot_offsets_in_instruction_stream = {},
+    };
+}
+
+void JIT::jump(JIT::Label& label)
+{
+    // jmp target (RIP-relative 32-bit offset)
+    write8(0xe9);
+    write32(0xdeadbeef);
+    label.add_jump(code.size());
+}
+
+void JIT::update_label(JIT::Label& label)
+{
+    label.offset_of_label_in_instruction_stream = code.size();
 }
 
 void JIT::native_call(void* callee)

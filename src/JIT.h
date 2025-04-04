@@ -72,6 +72,32 @@ public:
         }
     };
 
+    struct Label
+    {
+        size_t offset_of_label_in_instruction_stream { 0 };
+        std::vector<size_t> jump_slot_offsets_in_instruction_stream;
+
+        void add_jump(size_t offset)
+        {
+            jump_slot_offsets_in_instruction_stream.push_back(offset);
+        }
+
+        void link(JIT& jit)
+        {
+            for (auto offset_in_instruction_stream : jump_slot_offsets_in_instruction_stream)
+            {
+                auto offset = offset_of_label_in_instruction_stream - offset_in_instruction_stream;
+                auto jump_slot = offset_in_instruction_stream - 4;
+                jit.code[jump_slot + 0] = (offset >> 0) & 0xff;
+                jit.code[jump_slot + 1] = (offset >> 8) & 0xff;
+                jit.code[jump_slot + 2] = (offset >> 16) & 0xff;
+                jit.code[jump_slot + 3] = (offset >> 24) & 0xff;
+            }
+        }
+    };
+
+    friend Label;
+
     void mov64(Operand dst, Operand src);
     void mov32(Operand dst, Operand src);
 
@@ -80,12 +106,19 @@ public:
 
     void sub64(Operand dst, Operand src);
 
+    void mul64(Operand dst, Operand src);
+
+    void begin();
     void exit();
 
     void push64(Operand arg);
     void pop64(Operand arg);
 
     void nop();
+
+    [[nodiscard]] Label make_label();
+    void jump(Label& label);
+    void update_label(Label& label);
 
     void native_call(void* callee);
 

@@ -378,6 +378,10 @@ TestStats run_tests(const std::string& path)
             try
             {
                 run_action(stats, failed, path, line, command["action"]);
+
+                if (failed)
+                    continue;
+
                 stats.failed++;
                 std::println("{}/{} failed: expected trap, not trapped", path, line);
             }
