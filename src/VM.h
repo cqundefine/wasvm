@@ -62,6 +62,8 @@ private:
     static void branch_to_label(Label label);
     static void call_function(Ref<Function> function);
 
+    template <IsVector VectorType, bool Zero>
+    static void run_load_vector_element_instruction(const WasmFile::MemArg& megArg);
     template <IsVector VectorType, typename ActualType, typename LaneType>
     static void run_load_lane_instruction(const LoadStoreLaneArguments& args);
     template <IsVector VectorType, typename ActualType, typename StackType>

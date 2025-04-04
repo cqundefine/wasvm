@@ -185,6 +185,17 @@ constexpr Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
     return result;
 }
 
+template <IsVector LhsType, IsVector RhsType>
+constexpr Value operation_vector_dot(LhsType a, RhsType b)
+{
+    static_assert(std::is_same<LhsType, int16x8_t>() && std::is_same<RhsType, int16x8_t>(), "Unsupported vector type for q15mulr_sat");
+
+    uint32x4_t result = {};
+    for (size_t i = 0; i < lane_count<LhsType>(); i += 2)
+        result[i / 2] = static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]) + static_cast<int32_t>(a[i + 1]) * static_cast<int32_t>(b[i + 1]);
+    return result;
+}
+
 #define GENERIC_UNARY_OPERATION_FUNCTION(name, function) \
     template <typename T>                                \
     constexpr Value operation_##name(T a)                \

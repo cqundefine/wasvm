@@ -111,8 +111,14 @@ template <typename T>
 constexpr T nan_min(T a, T b)
 {
     if constexpr (std::is_floating_point<T>())
+    {
         if (std::isnan(a) || std::isnan(b))
             return std::numeric_limits<T>::quiet_NaN();
+
+        if (a == 0 && b == 0)
+            return std::signbit(a) ? a : b;
+    }
+
     return (a < b) ? a : b;
 }
 
@@ -120,8 +126,13 @@ template <typename T>
 constexpr T nan_max(T a, T b)
 {
     if constexpr (std::is_floating_point<T>())
+    {
         if (std::isnan(a) || std::isnan(b))
             return std::numeric_limits<T>::quiet_NaN();
+
+        if (a == 0 && b == 0)
+            return std::signbit(a) ? b : a;
+    }
     return (a > b) ? a : b;
 }
 

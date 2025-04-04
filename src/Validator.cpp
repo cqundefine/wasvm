@@ -727,12 +727,18 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.expect(Type::i32);
                 break;
             case Opcode::v128_load8_splat:
+                validate_load_operation(Type::v128, 8, instruction.get_arguments<WasmFile::MemArg>());
+                break;
             case Opcode::v128_load16_splat:
+                validate_load_operation(Type::v128, 16, instruction.get_arguments<WasmFile::MemArg>());
+                break;
             case Opcode::v128_load32_splat:
-            case Opcode::v128_load64_splat:
             case Opcode::v128_load32_zero:
+                validate_load_operation(Type::v128, 32, instruction.get_arguments<WasmFile::MemArg>());
+                break;
+            case Opcode::v128_load64_splat:
             case Opcode::v128_load64_zero:
-                validate_load_operation(Type::v128, 128, instruction.get_arguments<WasmFile::MemArg>());
+                validate_load_operation(Type::v128, 64, instruction.get_arguments<WasmFile::MemArg>());
                 break;
             case Opcode::v128_load8_lane:
             case Opcode::v128_load16_lane:
@@ -808,7 +814,6 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 break;
             case Opcode::i8x16_narrow_i16x8_s:
             case Opcode::i8x16_narrow_i16x8_u:
-            case Opcode::i32x4_dot_i16x8_s:
             case Opcode::i16x8_narrow_i32x4_s:
             case Opcode::i16x8_narrow_i32x4_u:
                 validate_binary_operation_old(Type::v128);

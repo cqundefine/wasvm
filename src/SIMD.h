@@ -109,7 +109,9 @@ T vector_pmax(T a, T b)
 template <IsVector T>
 T vector_abs(T a)
 {
-    return (a < 0) ? -a : a;
+    for (size_t i = 0; i < lane_count<T>(); i++)
+        a[i] = std::abs(a[i]);
+    return a;
 }
 
 template <IsVector T>

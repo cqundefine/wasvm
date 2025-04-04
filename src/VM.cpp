@@ -1,11 +1,12 @@
-#include "Value.h"
-#include "WasmFile.h"
 #include <Compiler.h>
 #include <Opcode.h>
 #include <Operators.h>
+#include <SIMD.h>
 #include <Type.h>
 #include <Util.h>
 #include <VM.h>
+#include <Value.h>
+#include <WasmFile.h>
 #include <cstring>
 #include <print>
 
@@ -547,6 +548,24 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 break;
             }
+            case Opcode::v128_load8_splat:
+                run_load_vector_element_instruction<uint8x16_t, false>(instruction.get_arguments<WasmFile::MemArg>());
+                break;
+            case Opcode::v128_load16_splat:
+                run_load_vector_element_instruction<uint16x8_t, false>(instruction.get_arguments<WasmFile::MemArg>());
+                break;
+            case Opcode::v128_load32_splat:
+                run_load_vector_element_instruction<uint32x4_t, false>(instruction.get_arguments<WasmFile::MemArg>());
+                break;
+            case Opcode::v128_load64_splat:
+                run_load_vector_element_instruction<uint64x2_t, false>(instruction.get_arguments<WasmFile::MemArg>());
+                break;
+            case Opcode::v128_load32_zero:
+                run_load_vector_element_instruction<uint32x4_t, true>(instruction.get_arguments<WasmFile::MemArg>());
+                break;
+            case Opcode::v128_load64_zero:
+                run_load_vector_element_instruction<uint64x2_t, true>(instruction.get_arguments<WasmFile::MemArg>());
+                break;
             case v128_const:
                 m_frame->stack.push(instruction.get_arguments<uint128_t>());
                 break;
@@ -830,6 +849,29 @@ void VM::call_function(Ref<Function> function)
     std::vector<Value> returnedValues = run_function(function->mod, function, args);
     for (const auto& returned : returnedValues)
         m_frame->stack.push(returned);
+}
+
+template <IsVector VectorType, bool Zero>
+void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
+{
+    auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+
+    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+
+    if ((uint64_t)address + memArg.offset + sizeof(VectorElement<VectorType>) > memory->size * WASM_PAGE_SIZE)
+        throw Trap();
+
+    VectorElement<VectorType> value {};
+    memcpy(&value, &memory->data[address + memArg.offset], sizeof(VectorElement<VectorType>));
+
+    if constexpr (Zero)
+    {
+        VectorType vector {};
+        vector[0] = value;
+        m_frame->stack.push(vector);
+    }
+    else
+        m_frame->stack.push(vector_broadcast<VectorType>(std::move(value)));
 }
 
 template <IsVector VectorType, typename ActualType, typename LaneType>

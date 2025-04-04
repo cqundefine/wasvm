@@ -1023,6 +1023,7 @@ enum class MultiByteFD
     X(i32x4_min_u, vector_min, uint32x4_t, uint32x4_t, uint32x4_t)                                            \
     X(i32x4_max_s, vector_max, int32x4_t, int32x4_t, int32x4_t)                                               \
     X(i32x4_max_u, vector_max, uint32x4_t, uint32x4_t, uint32x4_t)                                            \
+    X(i32x4_dot_i16x8_s, vector_dot, int16x8_t, int16x8_t, int32x4_t)                                         \
     X(i64x2_shl, vector_shl, uint64x2_t, uint32_t, uint64x2_t)                                                \
     X(i64x2_shr_s, vector_shr, int64x2_t, uint32_t, int64x2_t)                                                \
     X(i64x2_shr_u, vector_shr, uint64x2_t, uint32_t, uint64x2_t)                                              \

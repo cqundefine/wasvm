@@ -50,40 +50,50 @@ std::optional<Value> parse_value(nlohmann::json json)
             for (size_t i = 0; i < json["value"].size(); i++)
             {
                 auto lane = json["value"][i];
-                uint128_t laneInt = static_cast<uint128_t>(std::stoull(lane.get<std::string>()));
-                value |= laneInt << (shiftCount * i);
+                if (lane.get<std::string>().starts_with("nan"))
+                {
+                    if (laneType == "f32")
+                        value |= static_cast<uint128_t>(std::bit_cast<uint32_t>(typed_nan<float>())) << (shiftCount * i);
+                    else if (laneType == "f64")
+                        value |= static_cast<uint128_t>(std::bit_cast<uint64_t>(typed_nan<double>())) << (shiftCount * i);
+                    else
+                        return {};
+                }
+                else
+                {
+                    uint128_t laneInt = static_cast<uint128_t>(std::stoull(lane.get<std::string>()));
+                    value |= laneInt << (shiftCount * i);
+                }
             }
             return value;
         }
-        else
+
+        std::string value = json["value"];
+
+        if (type == "i32")
+            return static_cast<uint32_t>(std::stoull(value));
+        if (type == "i64")
+            return static_cast<uint64_t>(std::stoull(value));
+
+        if (type == "f32")
         {
-            std::string value = json["value"];
-
-            if (type == "i32")
-                return static_cast<uint32_t>(std::stoull(value));
-            if (type == "i64")
-                return static_cast<uint64_t>(std::stoull(value));
-
-            if (type == "f32")
-            {
-                if (value.starts_with("nan"))
-                    return typed_nan<float>();
-                uint32_t rawValue = static_cast<uint32_t>(std::stoull(value));
-                return std::bit_cast<float>(rawValue);
-            }
-            if (type == "f64")
-            {
-                if (value.starts_with("nan"))
-                    return typed_nan<double>();
-                uint64_t rawValue = static_cast<uint64_t>(std::stoull(value));
-                return std::bit_cast<double>(rawValue);
-            }
-
-            if (type == "funcref")
-                return Reference { ReferenceType::Function, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
-            if (type == "externref")
-                return Reference { ReferenceType::Extern, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
+            if (value.starts_with("nan"))
+                return typed_nan<float>();
+            uint32_t rawValue = static_cast<uint32_t>(std::stoull(value));
+            return std::bit_cast<float>(rawValue);
         }
+        if (type == "f64")
+        {
+            if (value.starts_with("nan"))
+                return typed_nan<double>();
+            uint64_t rawValue = static_cast<uint64_t>(std::stoull(value));
+            return std::bit_cast<double>(rawValue);
+        }
+
+        if (type == "funcref")
+            return Reference { ReferenceType::Function, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
+        if (type == "externref")
+            return Reference { ReferenceType::Extern, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
 
         return {};
     }
