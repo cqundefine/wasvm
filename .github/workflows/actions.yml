@@ -30,3 +30,8 @@ jobs:
       - name: run tests
         run: |
           ./run_tests.py
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.arch }}
+          path: build/wasvm
