@@ -50,20 +50,8 @@ std::optional<Value> parse_value(nlohmann::json json)
             for (size_t i = 0; i < json["value"].size(); i++)
             {
                 auto lane = json["value"][i];
-                if (lane.get<std::string>().starts_with("nan"))
-                {
-                    if (laneType == "f32")
-                        value |= static_cast<uint128_t>(std::bit_cast<uint32_t>(typed_nan<float>())) << (shiftCount * i);
-                    else if (laneType == "f64")
-                        value |= static_cast<uint128_t>(std::bit_cast<uint64_t>(typed_nan<double>())) << (shiftCount * i);
-                    else
-                        return {};
-                }
-                else
-                {
-                    uint128_t laneInt = static_cast<uint128_t>(std::stoull(lane.get<std::string>()));
-                    value |= laneInt << (shiftCount * i);
-                }
+                uint128_t laneInt = static_cast<uint128_t>(std::stoull(lane.get<std::string>()));
+                value |= laneInt << (shiftCount * i);
             }
             return value;
         }

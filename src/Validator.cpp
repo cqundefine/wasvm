@@ -1,11 +1,13 @@
-#include "Util.h"
-#include "Value.h"
 #include <Parser.h>
+#include <SIMD.h>
 #include <Type.h>
+#include <Util.h>
 #include <Validator.h>
+#include <Value.h>
 #include <ValueStack.h>
 #include <WasmFile.h>
 #include <cassert>
+#include <cstdint>
 #include <iostream>
 #include <ostream>
 #include <print>
@@ -302,37 +304,15 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
     for (const auto local : code.locals)
         locals.push_back(local);
 
-    auto validate_unary_operation_old = [&stack](Type type) {
-        stack.expect(type);
-        stack.push(type);
-    };
-
     auto validate_unary_operation = [&stack](Type type, Type resultType) {
         stack.expect(type);
         stack.push(resultType);
-    };
-
-    auto validate_binary_operation_old = [&stack](Type type) {
-        stack.expect(type);
-        stack.expect(type);
-        stack.push(type);
     };
 
     auto validate_binary_operation = [&stack](Type lhsType, Type rhsType, Type resultType) {
         stack.expect(rhsType);
         stack.expect(lhsType);
         stack.push(resultType);
-    };
-
-    auto validate_test_operation_old = [&stack](Type type) {
-        stack.expect(type);
-        stack.push(Type::i32);
-    };
-
-    auto validate_comparison_operation_old = [&stack](Type type) {
-        stack.expect(type);
-        stack.expect(type);
-        stack.push(Type::i32);
     };
 
     auto validate_load_operation = [&stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
@@ -347,6 +327,15 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
         VALIDATION_ASSERT((1ull << memArg.align) <= bitWidth / 8);
         stack.expect(type);
         stack.expect(Type::i32);
+    };
+
+    auto validate_load_lane_operation = [&stack, this](Type type, uint32_t laneSize, const LoadStoreLaneArguments& arguments) {
+        VALIDATION_ASSERT(arguments.memArg.memoryIndex < m_memories);
+        VALIDATION_ASSERT((1ull << arguments.memArg.align) <= laneSize / 8);
+        VALIDATION_ASSERT(arguments.lane < 128 / laneSize);
+        stack.expect(Type::v128);
+        stack.expect(Type::i32);
+        stack.push(Type::v128);
     };
 
     for (auto& instruction : code.instructions)
@@ -741,17 +730,17 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 validate_load_operation(Type::v128, 64, instruction.get_arguments<WasmFile::MemArg>());
                 break;
             case Opcode::v128_load8_lane:
-            case Opcode::v128_load16_lane:
-            case Opcode::v128_load32_lane:
-            case Opcode::v128_load64_lane: {
-                const auto& arguments = instruction.get_arguments<LoadStoreLaneArguments>();
-                VALIDATION_ASSERT(arguments.memArg.memoryIndex < m_memories);
-                VALIDATION_ASSERT((1ull << arguments.memArg.align) <= 128 / 8);
-                stack.expect(Type::v128);
-                stack.expect(Type::i32);
-                stack.push(Type::v128);
+                validate_load_lane_operation(Type::v128, 8, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
-            }
+            case Opcode::v128_load16_lane:
+                validate_load_lane_operation(Type::v128, 16, instruction.get_arguments<LoadStoreLaneArguments>());
+                break;
+            case Opcode::v128_load32_lane:
+                validate_load_lane_operation(Type::v128, 32, instruction.get_arguments<LoadStoreLaneArguments>());
+                break;
+            case Opcode::v128_load64_lane:
+                validate_load_lane_operation(Type::v128, 64, instruction.get_arguments<LoadStoreLaneArguments>());
+                break;
             case Opcode::v128_store8_lane:
             case Opcode::v128_store16_lane:
             case Opcode::v128_store32_lane:
@@ -766,57 +755,81 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
             case Opcode::v128_const:
                 stack.push(Type::v128);
                 break;
-            case Opcode::i8x16_shuffle:
-                // FIXME: Check lanes
-                validate_binary_operation_old(Type::v128);
+            case Opcode::i8x16_shuffle: {
+                const auto& lanes = instruction.get_arguments<uint8x16_t>();
+                for (uint8_t i = 0; i < 16; i++)
+                    VALIDATION_ASSERT(lanes[i] < 32);
+                validate_binary_operation(Type::v128, Type::v128, Type::v128);
                 break;
+            }
             case Opcode::i8x16_extract_lane_s:
-            case Opcode::i8x16_extract_lane_u:
+            case Opcode::i8x16_extract_lane_u: {
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 16);
+                stack.expect(Type::v128);
+                stack.push(Type::i32);
+                break;
+            }
             case Opcode::i16x8_extract_lane_s:
             case Opcode::i16x8_extract_lane_u:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 8);
+                stack.expect(Type::v128);
+                stack.push(Type::i32);
+                break;
             case Opcode::i32x4_extract_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::v128);
                 stack.push(Type::i32);
                 break;
             case Opcode::i64x2_extract_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::v128);
                 stack.push(Type::i64);
                 break;
             case Opcode::f32x4_extract_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::v128);
                 stack.push(Type::f32);
                 break;
             case Opcode::f64x2_extract_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::v128);
                 stack.push(Type::f64);
                 break;
             case Opcode::i8x16_replace_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 16);
+                stack.expect(Type::i32);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
+                break;
             case Opcode::i16x8_replace_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 8);
+                stack.expect(Type::i32);
+                stack.expect(Type::v128);
+                stack.push(Type::v128);
+                break;
             case Opcode::i32x4_replace_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::i32);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
             case Opcode::i64x2_replace_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::i64);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
             case Opcode::f32x4_replace_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::f32);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
             case Opcode::f64x2_replace_lane:
+                VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::f64);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
-                break;
-            case Opcode::i16x8_extadd_pairwise_i8x16_s:
-            case Opcode::i16x8_extadd_pairwise_i8x16_u:
-            case Opcode::i32x4_extadd_pairwise_i16x8_s:
-            case Opcode::i32x4_extadd_pairwise_i16x8_u:
-                validate_unary_operation_old(Type::v128);
                 break;
             case Opcode::v128_bitselect:
                 stack.expect(Type::v128);

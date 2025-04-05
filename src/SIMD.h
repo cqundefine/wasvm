@@ -61,7 +61,9 @@ template <IsVector T>
 T vector_broadcast(VectorElement<T> value)
 {
     T result = {};
-    return result + value;
+    for (size_t i = 0; i < lane_count<T>(); i++)
+        result[i] = value;
+    return result;
 }
 
 #define GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(name, function) \
@@ -71,7 +73,7 @@ T vector_broadcast(VectorElement<T> value)
     {                                                              \
         static_assert(sizeof(T) == sizeof(U));                     \
         T result;                                                  \
-        for (size_t i = 0; i < lane_count<T>(); ++i)               \
+        for (size_t i = 0; i < lane_count<T>(); i++)               \
             result[i] = function(a[i], b[i]);                      \
         return result;                                             \
     }
@@ -100,7 +102,7 @@ T vector_pmax(T a, T b)
     T vector_##name(T vec)                                        \
     {                                                             \
         T result;                                                 \
-        for (size_t i = 0; i < lane_count<T>(); ++i)              \
+        for (size_t i = 0; i < lane_count<T>(); i++)              \
             result[i] = function(vec[i]);                         \
         return result;                                            \
     }
@@ -203,7 +205,7 @@ T vector_avgr(T a, T b)
 {
     // FIXME: Find a SIMD instruction way to do this
     T result;
-    for (size_t i = 0; i < lane_count<T>(); ++i)
+    for (size_t i = 0; i < lane_count<T>(); i++)
         result[i] = (a[i] + b[i] + 1) / 2;
     return result;
 }
@@ -212,7 +214,7 @@ template <IsVector T>
 T vector_popcnt(T a)
 {
     T result;
-    for (size_t i = 0; i < lane_count<T>(); ++i)
+    for (size_t i = 0; i < lane_count<T>(); i++)
         result[i] = std::popcount(a[i]);
     return result;
 }

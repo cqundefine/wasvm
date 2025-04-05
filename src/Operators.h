@@ -439,3 +439,12 @@ constexpr Value operation_vector_trunc_sat(T a)
         result[i] = saturate_to<VectorElement<ResultType>>(std::trunc(a[i]));
     return result;
 }
+
+template <IsVector ResultType, IsVector T>
+constexpr Value operation_vector_extadd_pairwise(T a)
+{
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<ResultType>(); i++)
+        result[i] = a[i * 2] + a[i * 2 + 1];
+    return result;
+}

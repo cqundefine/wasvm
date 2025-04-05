@@ -85,26 +85,38 @@ constexpr T ceil_div(T a, U b)
     return result;
 }
 
-template <typename T, typename U>
-    requires std::is_integral_v<T> && std::is_integral_v<U>
-constexpr T saturating_add(T a, U b)
+template <typename Result, typename T>
+constexpr Result saturate_to(T a)
 {
-    if (a > 0 && b > 0 && a > std::numeric_limits<T>::max() - b)
-        return std::numeric_limits<T>::max();
-    if (a < 0 && b < 0 && a < std::numeric_limits<T>::min() - b)
-        return std::numeric_limits<T>::min();
-    return a + b;
+    using Convertee = std::conditional_t<std::is_floating_point_v<T>, double, T>;
+
+    if constexpr (std::is_integral<Result>() && std::is_floating_point<T>())
+    {
+        if (std::isnan(a))
+            return 0;
+    }
+
+    constexpr auto min = static_cast<Convertee>(std::numeric_limits<Result>::min());
+    constexpr auto max = static_cast<Convertee>(std::numeric_limits<Result>::max());
+
+    auto clamped = std::clamp(static_cast<Convertee>(a), min, max);
+    return static_cast<Result>(clamped);
 }
 
-template <typename T, typename U>
-    requires std::is_integral_v<T> && std::is_integral_v<U>
-constexpr T saturating_sub(T a, U b)
+template <std::integral T>
+constexpr T saturating_add(T a, T b)
 {
-    if (a > 0 && b < 0 && a > std::numeric_limits<T>::max() + b)
-        return std::numeric_limits<T>::max();
-    if (a < 0 && b > 0 && a < std::numeric_limits<T>::min() + b)
-        return std::numeric_limits<T>::min();
-    return a - b;
+    using Convertee = std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
+    Convertee result = static_cast<Convertee>(a) + static_cast<Convertee>(b);
+    return saturate_to<T>(result);
+}
+
+template <std::integral T>
+constexpr T saturating_sub(T a, T b)
+{
+    using Convertee = std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
+    Convertee result = static_cast<Convertee>(a) - static_cast<Convertee>(b);
+    return saturate_to<T>(result);
 }
 
 template <typename T>
@@ -134,23 +146,6 @@ constexpr T nan_max(T a, T b)
             return std::signbit(a) ? b : a;
     }
     return (a > b) ? a : b;
-}
-
-template <typename Result, typename T>
-constexpr Result saturate_to(T a)
-{
-    using Convertee = std::conditional_t<std::is_floating_point_v<T>, double, T>;
-
-    if constexpr (std::is_integral<Result>() && std::is_floating_point<T>())
-    {
-        if (std::isnan(a))
-            return 0;
-    }
-
-    constexpr auto min = static_cast<Convertee>(std::numeric_limits<Result>::min());
-    constexpr auto max = static_cast<Convertee>(std::numeric_limits<Result>::max());
-
-    return static_cast<Result>(std::clamp(static_cast<Convertee>(a), min, max));
 }
 
 using float32_t = float;

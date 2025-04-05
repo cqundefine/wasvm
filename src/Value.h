@@ -33,7 +33,6 @@ struct Reference
     {
     }
 };
-static_assert(sizeof(Reference) == 8);
 
 template <typename T>
 extern const char* value_type_name;

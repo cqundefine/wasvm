@@ -571,7 +571,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->stack.push(instruction.get_arguments<uint128_t>());
                 break;
             case i8x16_shuffle: {
-                const uint8x16_t& arg = instruction.get_arguments<uint8x16_t>();
+                const auto& arg = instruction.get_arguments<uint8x16_t>();
                 auto b = m_frame->stack.pop_as<uint8x16_t>();
                 auto a = m_frame->stack.pop_as<uint8x16_t>();
                 // TODO: Use __builtin_shuffle on GCC
