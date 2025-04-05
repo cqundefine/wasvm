@@ -54,6 +54,9 @@ constexpr Ref<T> StaticRefCast(const Ref<Base>& base)
 
 void fill_buffer_with_random_data(uint8_t* data, size_t size);
 
+using defer = std::shared_ptr<void>;
+#define DEFER(x) defer _(nullptr, [](...) { x; });
+
 template <std::floating_point T>
 consteval T typed_nan()
 {

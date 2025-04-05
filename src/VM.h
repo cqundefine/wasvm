@@ -11,6 +11,7 @@
 #include <stack>
 
 constexpr uint32_t WASM_PAGE_SIZE = 65536;
+constexpr uint32_t MAX_FRAME_STACK_SIZE = 1024;
 
 class VM
 {
@@ -47,7 +48,7 @@ public:
     static void set_force_jit(bool force_jit) { m_force_jit = force_jit; }
 
 private:
-    static Value run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction>& instructions, Type returnType);
+    static Value run_bare_code(Ref<Module> mod, const std::vector<Instruction>& instructions);
 
     static void clean_up_frame();
 

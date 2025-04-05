@@ -33,9 +33,9 @@ Value default_value_for_type(Type type)
         case Type::v128:
             return (uint128_t)0;
         case Type::funcref:
-            return Reference { ReferenceType::Function, UINT32_MAX };
+            return Reference { ReferenceType::Function, UINT32_MAX, nullptr };
         case Type::externref:
-            return Reference { ReferenceType::Extern, UINT32_MAX };
+            return Reference { ReferenceType::Extern, UINT32_MAX, nullptr };
         default:
             throw Trap();
     }

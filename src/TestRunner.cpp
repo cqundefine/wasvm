@@ -79,9 +79,9 @@ std::optional<Value> parse_value(nlohmann::json json)
         }
 
         if (type == "funcref")
-            return Reference { ReferenceType::Function, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
+            return Reference { ReferenceType::Function, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)), nullptr };
         if (type == "externref")
-            return Reference { ReferenceType::Extern, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)) };
+            return Reference { ReferenceType::Extern, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)), nullptr };
 
         return {};
     }

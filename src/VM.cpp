@@ -54,17 +54,73 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
         }
     }
 
+    for (size_t i = 0; i < new_module->wasmFile->functionTypeIndexes.size(); i++)
+    {
+        auto function = MakeRef<Function>();
+        function->type = new_module->wasmFile->functionTypes[new_module->wasmFile->functionTypeIndexes[i]];
+        function->mod = new_module;
+        function->code = new_module->wasmFile->codeBlocks[i];
+        new_module->functions.push_back(function);
+    }
+
     for (const auto& global : new_module->wasmFile->globals)
-        new_module->add_global(MakeRef<Global>(global.type, global.mut, run_bare_code_returning(new_module, global.initCode, global.type)));
+        new_module->add_global(MakeRef<Global>(global.type, global.mut, run_bare_code(new_module, global.initCode)));
 
     for (const auto& memory : new_module->wasmFile->memories)
         new_module->add_memory(MakeRef<Memory>(memory));
+
+    for (const auto& tableInfo : new_module->wasmFile->tables)
+    {
+        auto table = MakeRef<Table>(tableInfo.refType);
+        table->max = tableInfo.limits.max;
+        table->elements.reserve(tableInfo.limits.min);
+        for (uint32_t i = 0; i < tableInfo.limits.min; i++)
+            table->elements.push_back(Reference { get_reference_type_from_reftype(tableInfo.refType), UINT32_MAX, new_module.get() });
+        new_module->add_table(table);
+    }
+
+    for (auto& element : new_module->wasmFile->elements)
+    {
+        if (element.mode == WasmFile::ElementMode::Active)
+        {
+            Value beginValue = run_bare_code(new_module, element.expr);
+            assert(beginValue.holds_alternative<uint32_t>());
+            uint32_t begin = beginValue.get<uint32_t>();
+
+            size_t size = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
+
+            if (begin + size > new_module->get_table(element.table)->elements.size())
+                throw Trap();
+
+            for (size_t i = 0; i < size; i++)
+            {
+                if (element.functionIndexes.empty())
+                {
+                    Value reference = run_bare_code(new_module, element.referencesExpr[i]);
+                    assert(reference.holds_alternative<Reference>());
+                    new_module->get_table(element.table)->elements[begin + i] = reference.get<Reference>();
+                }
+                else
+                {
+                    new_module->get_table(element.table)->elements[begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i], new_module.get() };
+                }
+            }
+        }
+
+        if (element.mode == WasmFile::ElementMode::Active || element.mode == WasmFile::ElementMode::Declarative)
+        {
+            element.table = UINT32_MAX;
+            element.expr.clear();
+            element.functionIndexes.clear();
+            element.referencesExpr.clear();
+        }
+    }
 
     for (auto& data : new_module->wasmFile->dataBlocks)
     {
         if (data.mode == WasmFile::ElementMode::Active)
         {
-            Value beginValue = run_bare_code_returning(new_module, data.expr, Type::i32);
+            Value beginValue = run_bare_code(new_module, data.expr);
             assert(beginValue.holds_alternative<uint32_t>());
             uint32_t begin = beginValue.get<uint32_t>();
 
@@ -79,60 +135,6 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
             data.expr.clear();
             data.data.clear();
         }
-    }
-
-    for (const auto& tableInfo : new_module->wasmFile->tables)
-    {
-        auto table = MakeRef<Table>(tableInfo.refType);
-        table->max = tableInfo.limits.max;
-        table->elements.reserve(tableInfo.limits.min);
-        for (uint32_t i = 0; i < tableInfo.limits.min; i++)
-            table->elements.push_back(Reference { get_reference_type_from_reftype(tableInfo.refType), UINT32_MAX });
-        new_module->add_table(table);
-    }
-
-    for (auto& element : new_module->wasmFile->elements)
-    {
-        if (element.mode == WasmFile::ElementMode::Active)
-        {
-            Value beginValue = run_bare_code_returning(new_module, element.expr, Type::i32);
-            assert(beginValue.holds_alternative<uint32_t>());
-            uint32_t begin = beginValue.get<uint32_t>();
-
-            if (begin + (element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size()) > new_module->get_table(element.table)->elements.size())
-                throw Trap();
-
-            for (size_t i = 0; i < element.functionIndexes.size(); i++)
-            {
-                if (element.functionIndexes.empty())
-                {
-                    Value reference = run_bare_code_returning(new_module, element.referencesExpr[i], Type::funcref);
-                    assert(reference.holds_alternative<Reference>());
-                    new_module->get_table(element.table)->elements[begin + i] = reference.get<Reference>();
-                }
-                else
-                {
-                    new_module->get_table(element.table)->elements[begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i] };
-                }
-            }
-        }
-
-        if (element.mode == WasmFile::ElementMode::Active || element.mode == WasmFile::ElementMode::Declarative)
-        {
-            element.table = UINT32_MAX;
-            element.expr.clear();
-            element.functionIndexes.clear();
-            element.referencesExpr.clear();
-        }
-    }
-
-    for (size_t i = 0; i < new_module->wasmFile->functionTypeIndexes.size(); i++)
-    {
-        auto function = MakeRef<Function>();
-        function->type = new_module->wasmFile->functionTypes[new_module->wasmFile->functionTypeIndexes[i]];
-        function->mod = new_module;
-        function->code = new_module->wasmFile->codeBlocks[i];
-        new_module->functions.push_back(function);
     }
 
     if (new_module->wasmFile->startFunction)
@@ -173,8 +175,13 @@ std::vector<Value> VM::run_function(Ref<Module> mod, uint32_t index, const std::
 
 std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, const std::vector<Value>& args)
 {
+    if (m_frame_stack.size() >= MAX_FRAME_STACK_SIZE)
+        throw Trap();
+
     m_frame_stack.push(m_frame);
     m_frame = new Frame(mod);
+
+    DEFER(clean_up_frame());
 
     // FIXME: Are we sure that args is the correct size
     for (const auto& param : args)
@@ -190,7 +197,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
             auto jittedCode = Compiler::compile(function, mod->wasmFile);
             Value returnValue;
             jittedCode(m_frame->locals.data(), &returnValue);
-            clean_up_frame();
             if (function->type.returns.size() == 0)
                 return {};
             else
@@ -251,11 +257,8 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                     branch_to_label(arguments.defaultLabel);
                 break;
             }
-            case return_: {
-                std::vector<Value> returnValues = m_frame->stack.pop_n_values(function->type.returns.size());
-                clean_up_frame();
-                return returnValues;
-            }
+            case return_:
+                return std::move(m_frame->stack.pop_n_values(function->type.returns.size()));
             case call:
                 call_function(mod->functions[instruction.get_arguments<uint32_t>()]);
                 break;
@@ -277,9 +280,10 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 if (reference.type != ReferenceType::Function)
                     throw Trap();
 
-                auto function = mod->functions[reference.index];
+                auto module = reference.module ? reference.module : mod.get();
+                auto function = module->functions[reference.index];
 
-                if (function->type != mod->wasmFile->functionTypes[arguments.typeIndex])
+                if (function->type != module->wasmFile->functionTypes[arguments.typeIndex])
                     throw Trap();
 
                 call_function(function);
@@ -403,7 +407,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->stack.push((uint32_t)(m_frame->stack.pop_as<Reference>().index == UINT32_MAX));
                 break;
             case ref_func:
-                m_frame->stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>() });
+                m_frame->stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>(), mod.get() });
                 break;
             case memory_init: {
                 const auto& arguments = instruction.get_arguments<MemoryInitArguments>();
@@ -467,11 +471,23 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 auto table = mod->get_table(arguments.tableIndex);
 
-                if ((uint64_t)source + count > mod->wasmFile->elements[arguments.elementIndex].functionIndexes.size() || (uint64_t)destination + count > table->elements.size())
+                const auto& elem = mod->wasmFile->elements[arguments.elementIndex];
+                size_t elemSize = elem.functionIndexes.empty() ? elem.referencesExpr.size() : elem.functionIndexes.size();
+
+                if ((uint64_t)source + count > elemSize || (uint64_t)destination + count > table->elements.size())
                     throw Trap();
 
                 for (uint32_t i = 0; i < count; i++)
-                    table->elements[destination + i] = Reference { ReferenceType::Function, mod->wasmFile->elements[arguments.elementIndex].functionIndexes[source + i] };
+                {
+                    if (elem.functionIndexes.empty())
+                    {
+                        Value reference = run_bare_code(mod, elem.referencesExpr[source + i]);
+                        assert(reference.holds_alternative<Reference>());
+                        table->elements[destination + i] = reference.get<Reference>();
+                    }
+                    else
+                        table->elements[destination + i] = Reference { ReferenceType::Function, elem.functionIndexes[source + i], mod.get() };
+                }
                 break;
             }
             case elem_drop: {
@@ -716,9 +732,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
     }
 #endif
 
-    clean_up_frame();
-
-    return returnValues;
+    return std::move(returnValues);
 }
 
 Ref<Module> VM::get_registered_module(const std::string& name)
@@ -726,7 +740,7 @@ Ref<Module> VM::get_registered_module(const std::string& name)
     return m_registered_modules[name];
 }
 
-Value VM::run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction>& instructions, Type returnType)
+Value VM::run_bare_code(Ref<Module> mod, const std::vector<Instruction>& instructions)
 {
     ValueStack stack;
 
@@ -756,7 +770,7 @@ Value VM::run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction
                 stack.push(default_value_for_type(instruction.get_arguments<Type>()));
                 break;
             case ref_func:
-                stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>() });
+                stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>(), mod.get() });
                 break;
             case v128_const:
                 stack.push(instruction.get_arguments<uint128_t>());
@@ -772,13 +786,7 @@ Value VM::run_bare_code_returning(Ref<Module> mod, const std::vector<Instruction
         throw Trap();
 #endif
 
-    Value value = stack.pop();
-#ifdef DEBUG_BUILD
-    if (get_value_type(value) != returnType)
-        throw Trap();
-#endif
-
-    return value;
+    return stack.pop();
 }
 
 void VM::clean_up_frame()

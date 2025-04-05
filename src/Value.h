@@ -22,14 +22,18 @@ enum class ReferenceType
     Extern
 };
 
+class Module;
+
 struct Reference
 {
     ReferenceType type;
     uint32_t index;
+    Module* module;
 
-    constexpr Reference(ReferenceType type, uint32_t index)
+    constexpr Reference(ReferenceType type, uint32_t index, Module* module)
         : type(type)
         , index(index)
+        , module(module)
     {
     }
 };

@@ -225,7 +225,10 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
     for (const auto& element : wasmFile->elements)
     {
         if (element.mode == WasmFile::ElementMode::Active)
+        {
             VALIDATION_ASSERT(element.table < m_tables.size());
+            VALIDATION_ASSERT(element.valueType == m_tables[element.table]);
+        }
 
         for (const auto& expression : element.referencesExpr)
             validate_constant_expression(expression, element.valueType, true);
@@ -931,7 +934,7 @@ Value Validator::run_global_restricted_constant_expression(const std::vector<Ins
                 stack.push(default_value_for_type(instruction.get_arguments<Type>()));
                 break;
             case ref_func:
-                stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>() });
+                stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>(), nullptr });
                 break;
             case v128_const:
                 stack.push(instruction.get_arguments<uint128_t>());

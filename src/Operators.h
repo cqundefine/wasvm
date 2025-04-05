@@ -373,7 +373,7 @@ constexpr Value operation_vector_extend_multiply(LhsType a, RhsType b)
     constexpr auto sourceOffset = High ? lane_count<LhsType>() / 2 : 0;
     ResultType result {};
     for (size_t i = 0; i < lane_count<ResultType>(); i++)
-        result[i] = a[i + sourceOffset] * b[i + sourceOffset];
+        result[i] = static_cast<VectorElement<ResultType>>(a[i + sourceOffset]) * static_cast<VectorElement<ResultType>>(b[i + sourceOffset]);
     return result;
 }
 
