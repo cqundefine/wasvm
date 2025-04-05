@@ -8,6 +8,7 @@
 #include <Value.h>
 #include <WasmFile.h>
 #include <cstring>
+#include <limits>
 #include <print>
 
 Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)

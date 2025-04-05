@@ -812,26 +812,10 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::i8x16_narrow_i16x8_s:
-            case Opcode::i8x16_narrow_i16x8_u:
-            case Opcode::i16x8_narrow_i32x4_s:
-            case Opcode::i16x8_narrow_i32x4_u:
-                validate_binary_operation_old(Type::v128);
-                break;
-            case Opcode::f32x4_demote_f64x2_zero:
-            case Opcode::f64x2_promote_low_f32x4:
             case Opcode::i16x8_extadd_pairwise_i8x16_s:
             case Opcode::i16x8_extadd_pairwise_i8x16_u:
             case Opcode::i32x4_extadd_pairwise_i16x8_s:
             case Opcode::i32x4_extadd_pairwise_i16x8_u:
-            case Opcode::i32x4_trunc_sat_f32x4_s:
-            case Opcode::i32x4_trunc_sat_f32x4_u:
-            case Opcode::f32x4_convert_i32x4_s:
-            case Opcode::f32x4_convert_i32x4_u:
-            case Opcode::i32x4_trunc_sat_f64x2_s_zero:
-            case Opcode::i32x4_trunc_sat_f64x2_u_zero:
-            case Opcode::f64x2_convert_low_i32x4_s:
-            case Opcode::f64x2_convert_low_i32x4_u:
                 validate_unary_operation_old(Type::v128);
                 break;
             case Opcode::v128_bitselect:

@@ -136,6 +136,23 @@ constexpr T nan_max(T a, T b)
     return (a > b) ? a : b;
 }
 
+template <typename Result, typename T>
+constexpr Result saturate_to(T a)
+{
+    using Convertee = std::conditional_t<std::is_floating_point_v<T>, double, T>;
+
+    if constexpr (std::is_integral<Result>() && std::is_floating_point<T>())
+    {
+        if (std::isnan(a))
+            return 0;
+    }
+
+    constexpr auto min = static_cast<Convertee>(std::numeric_limits<Result>::min());
+    constexpr auto max = static_cast<Convertee>(std::numeric_limits<Result>::max());
+
+    return static_cast<Result>(std::clamp(static_cast<Convertee>(a), min, max));
+}
+
 using float32_t = float;
 using float64_t = double;
 

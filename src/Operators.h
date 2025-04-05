@@ -180,7 +180,7 @@ constexpr Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
         int32_t product = static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]);
         product += 0x4000;
         product >>= 15;
-        result[i] = static_cast<int16_t>(std::clamp(product, -32768, 32767));
+        result[i] = saturate_to<int16_t>(product);
     }
     return result;
 }
@@ -188,7 +188,7 @@ constexpr Value operation_vector_q15mulr_sat(LhsType a, RhsType b)
 template <IsVector LhsType, IsVector RhsType>
 constexpr Value operation_vector_dot(LhsType a, RhsType b)
 {
-    static_assert(std::is_same<LhsType, int16x8_t>() && std::is_same<RhsType, int16x8_t>(), "Unsupported vector type for q15mulr_sat");
+    static_assert(std::is_same<LhsType, int16x8_t>() && std::is_same<RhsType, int16x8_t>(), "Unsupported vector type for dot");
 
     uint32x4_t result = {};
     for (size_t i = 0; i < lane_count<LhsType>(); i += 2)
@@ -341,49 +341,101 @@ constexpr Value operation_vector_bitmask(T a)
     return result;
 }
 
-template <IsVector DestinationVectorType, bool High, IsVector T>
+// TODO: Vector extends, narrows, promotes and demotes could be unified
+template <IsVector ResultType, bool High, IsVector T>
 constexpr Value operation_vector_extend(T a)
 {
-    static_assert(lane_count<DestinationVectorType>() == lane_count<T>() / 2);
+    static_assert(lane_count<ResultType>() == lane_count<T>() / 2);
     constexpr auto sourceOffset = High ? lane_count<T>() / 2 : 0;
-    DestinationVectorType result {};
-    for (size_t i = 0; i < lane_count<DestinationVectorType>(); i++)
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<ResultType>(); i++)
         result[i] = a[i + sourceOffset];
     return result;
 }
 
-template <IsVector DestinationVectorType, IsVector T>
+template <IsVector ResultType, IsVector T>
 constexpr Value operation_vector_extend_low(T a)
 {
-    return operation_vector_extend<DestinationVectorType, false>(a);
+    return operation_vector_extend<ResultType, false>(a);
 }
 
-template <IsVector DestinationVectorType, IsVector T>
+template <IsVector ResultType, IsVector T>
 constexpr Value operation_vector_extend_high(T a)
 {
-    return operation_vector_extend<DestinationVectorType, true>(a);
+    return operation_vector_extend<ResultType, true>(a);
 }
 
-template <IsVector DestinationVectorType, bool High, IsVector LhsType, IsVector RhsType>
+template <IsVector ResultType, bool High, IsVector LhsType, IsVector RhsType>
 constexpr Value operation_vector_extend_multiply(LhsType a, RhsType b)
 {
     static_assert(sizeof(LhsType) == sizeof(RhsType));
-    static_assert(lane_count<DestinationVectorType>() == lane_count<LhsType>() / 2);
+    static_assert(lane_count<ResultType>() == lane_count<LhsType>() / 2);
     constexpr auto sourceOffset = High ? lane_count<LhsType>() / 2 : 0;
-    DestinationVectorType result {};
-    for (size_t i = 0; i < lane_count<DestinationVectorType>(); i++)
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<ResultType>(); i++)
         result[i] = a[i + sourceOffset] * b[i + sourceOffset];
     return result;
 }
 
-template <IsVector DestinationVectorType, IsVector LhsType, IsVector RhsType>
+template <IsVector ResultType, IsVector LhsType, IsVector RhsType>
 constexpr Value operation_vector_extend_multiply_low(LhsType a, RhsType b)
 {
-    return operation_vector_extend_multiply<DestinationVectorType, false>(a, b);
+    return operation_vector_extend_multiply<ResultType, false>(a, b);
 }
 
-template <IsVector DestinationVectorType, IsVector LhsType, IsVector RhsType>
+template <IsVector ResultType, IsVector LhsType, IsVector RhsType>
 constexpr Value operation_vector_extend_multiply_high(LhsType a, RhsType b)
 {
-    return operation_vector_extend_multiply<DestinationVectorType, true>(a, b);
+    return operation_vector_extend_multiply<ResultType, true>(a, b);
+}
+
+template <IsVector ResultType, IsVector T>
+constexpr Value operation_vector_narrow(T a, T b)
+{
+    static_assert(lane_count<ResultType>() / 2 == lane_count<T>());
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<T>(); i++)
+        result[i] = saturate_to<VectorElement<ResultType>>(a[i]);
+    for (size_t i = 0; i < lane_count<T>(); i++)
+        result[i + lane_count<T>()] = saturate_to<VectorElement<ResultType>>(b[i]);
+    return result;
+}
+
+template <IsVector ResultType, IsVector T>
+constexpr Value operation_vector_demote(T a)
+{
+    static_assert(lane_count<ResultType>() / 2 == lane_count<T>());
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<T>(); i++)
+        result[i] = static_cast<VectorElement<ResultType>>(a[i]);
+    return result;
+}
+
+template <IsVector ResultType, IsVector T>
+constexpr Value operation_vector_promote(T a)
+{
+    static_assert(lane_count<ResultType>() == lane_count<T>() / 2);
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<ResultType>(); i++)
+        result[i] = static_cast<VectorElement<ResultType>>(a[i]);
+    return result;
+}
+
+template <IsVector ResultType, IsVector T>
+constexpr Value operation_vector_convert(T a)
+{
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<ResultType>(); i++)
+        result[i] = static_cast<VectorElement<ResultType>>(a[i]);
+    return result;
+}
+
+template <IsVector ResultType, IsVector T>
+constexpr Value operation_vector_trunc_sat(T a)
+{
+    static_assert(lane_count<ResultType>() >= lane_count<T>());
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<T>(); i++)
+        result[i] = saturate_to<VectorElement<ResultType>>(std::trunc(a[i]));
+    return result;
 }

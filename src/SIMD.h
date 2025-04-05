@@ -49,9 +49,8 @@ concept IsVector = requires(T a) {
 };
 
 template <IsVector T>
-using VectorElement = decltype(std::declval<T>()[0]);
+using VectorElement = std::remove_cvref_t<decltype(std::declval<T>()[0])>;
 
-// lane count
 template <IsVector T>
 consteval size_t lane_count()
 {
