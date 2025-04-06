@@ -30,15 +30,15 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
             }
             case WasmFile::ImportType::Table: {
                 const auto table = location.module->get_table(location.index);
-                // if (table->type != import.tableRefType || import.tableLimits <= WasmFile::Limits(table->elements.size(), table->max))
-                //     throw Trap();
+                if (table->type != import.tableRefType || !WasmFile::Limits(table->elements.size(), table->max).fits_within(import.tableLimits))
+                    throw Trap();
                 new_module->add_table(table);
                 break;
             }
             case WasmFile::ImportType::Memory: {
                 const auto memory = location.module->get_memory(location.index);
-                // if (import.memoryLimits <= WasmFile::Limits(memory->size, memory->max))
-                //     throw Trap();
+                if (!WasmFile::Limits(memory->size, memory->max).fits_within(import.memoryLimits))
+                    throw Trap();
                 new_module->add_memory(memory);
                 break;
             }

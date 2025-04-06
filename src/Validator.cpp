@@ -471,7 +471,33 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
 
                 std::vector<Label> labels;
                 for (const auto& labelIndex : arguments.labels)
-                    labels.push_back(stack.get_label(labelIndex).label);
+                {
+                    const auto& label = stack.get_label(labelIndex);
+                    labels.push_back(label.label);
+
+                    if (label.type != ValidatorLabelType::Loop)
+                    {
+                        if (defaultLabel.type != ValidatorLabelType::Loop)
+                        {
+                            VALIDATION_ASSERT(label.returnTypes.size() == defaultLabel.returnTypes.size());
+                        }
+                        else
+                        {
+                            VALIDATION_ASSERT(label.returnTypes.size() == 0);
+                        }
+
+                        std::vector<ValidatorType> types;
+                        for (const auto type : std::views::reverse(label.returnTypes))
+                            types.push_back(stack.expect(type));
+
+                        for (const auto type : std::views::reverse(types))
+                            stack.push(type);
+                    }
+                }
+
+                if (defaultLabel.type != ValidatorLabelType::Loop)
+                    for (const auto type : std::views::reverse(defaultLabel.returnTypes))
+                        stack.expect(type);
 
                 instruction.arguments = BranchTableArguments {
                     .labels = std::move(labels),

@@ -9,6 +9,8 @@
 #include <print>
 #include <unistd.h>
 
+// FIXME: Better NAN handling, this is a hack
+
 bool float_equals(float a, float b)
 {
     if (std::isnan(a) && std::isnan(b))
