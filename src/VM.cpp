@@ -766,6 +766,25 @@ Value VM::run_bare_code(Ref<Module> mod, const std::vector<Instruction>& instruc
             case f64_const:
                 stack.push(instruction.get_arguments<double>());
                 break;
+            // NOTE: We don't check if extended const is enabled, because it would've failed at the validator stage
+            case i32_add:
+                stack.push(stack.pop_as<uint32_t>() + stack.pop_as<uint32_t>());
+                break;
+            case i32_sub:
+                stack.push(stack.pop_as<uint32_t>() - stack.pop_as<uint32_t>());
+                break;
+            case i32_mul:
+                stack.push(stack.pop_as<uint32_t>() * stack.pop_as<uint32_t>());
+                break;
+            case i64_add:
+                stack.push(stack.pop_as<uint64_t>() + stack.pop_as<uint64_t>());
+                break;
+            case i64_sub:
+                stack.push(stack.pop_as<uint64_t>() - stack.pop_as<uint64_t>());
+                break;
+            case i64_mul:
+                stack.push(stack.pop_as<uint64_t>() * stack.pop_as<uint64_t>());
+                break;
             case ref_null:
                 stack.push(default_value_for_type(instruction.get_arguments<Type>()));
                 break;

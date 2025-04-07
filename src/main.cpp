@@ -1,7 +1,8 @@
-#include "WasmFile.h"
 #include <FileStream.h>
+#include <Proposals.h>
 #include <TestRunner.h>
 #include <VM.h>
+#include <WasmFile.h>
 #include <argparse/argparse.hpp>
 #include <nlohmann/json.hpp>
 #include <print>
@@ -32,6 +33,14 @@ int main(int argc, char** argv)
         .help("load the spectest module")
         .flag();
 
+    parser.add_argument("--enable-multi-memory")
+        .help("enable multi-memory proposal")
+        .flag();
+
+    parser.add_argument("--enable-extended-const")
+        .help("enable extended-const proposal")
+        .flag();
+
     parser.add_argument("path")
         .help("path of module/test to run");
 
@@ -45,6 +54,9 @@ int main(int argc, char** argv)
         std::cerr << parser;
         return 1;
     }
+
+    g_enable_multi_memory = parser["--enable-multi-memory"] == true;
+    g_enable_extended_const = parser["--enable-extended-const"] == true;
 
     VM::set_force_jit(parser["-j"] == true);
 

@@ -3,6 +3,7 @@
 import os
 import subprocess
 import platform
+import shutil
 
 TEST_DATA_PATH = "test_data"
 
@@ -64,6 +65,8 @@ if not os.path.exists(TESTSUITE_SOURCE_PATH):
 
 if not os.path.exists(SPECTEST_PATH):
     subprocess.run([WAT2WASM_PATH, "spectest.wat", "-o", SPECTEST_PATH])
+
+shutil.rmtree(TESTSUITE_PROCESSED_PATH, ignore_errors=True)
 
 for file in os.listdir(TESTSUITE_SOURCE_PATH):
     if not file.endswith(".wast"):

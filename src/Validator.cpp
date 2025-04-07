@@ -1,4 +1,5 @@
 #include <Parser.h>
+#include <Proposals.h>
 #include <SIMD.h>
 #include <Type.h>
 #include <Util.h>
@@ -219,8 +220,8 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
         }
     }
 
-    // FIXME: Allow multi-memory
-    VALIDATION_ASSERT(m_memories <= 1);
+    if (!g_enable_multi_memory)
+        VALIDATION_ASSERT(m_memories <= 1);
 
     for (const auto& element : wasmFile->elements)
     {
@@ -346,14 +347,14 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
         switch (instruction.opcode)
         {
             using enum Opcode;
-            case Opcode::unreachable:
+            case unreachable:
                 stack.last_label().unreachable = true;
                 stack.erase(stack.last_label().stackHeight, 0);
                 break;
-            case Opcode::nop:
+            case nop:
                 break;
-            case Opcode::block:
-            case Opcode::loop: {
+            case block:
+            case loop: {
                 const auto& arguments = instruction.get_arguments<BlockLoopArguments>();
                 const auto& params = arguments.blockType.get_param_types(m_wasmFile);
                 instruction.arguments = {};
@@ -368,7 +369,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                     .stackHeight = stack.size(),
                     .returnTypes = arguments.blockType.get_return_types(m_wasmFile),
                     .paramTypes = params,
-                    .type = instruction.opcode == Opcode::loop ? ValidatorLabelType::Loop : ValidatorLabelType::Block,
+                    .type = instruction.opcode == loop ? ValidatorLabelType::Loop : ValidatorLabelType::Block,
                     .unreachable = false,
                     .label = label });
 
@@ -377,7 +378,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
 
                 break;
             }
-            case Opcode::if_: {
+            case if_: {
                 const auto& arguments = instruction.get_arguments<IfArguments>();
                 const auto& params = arguments.blockType.get_param_types(m_wasmFile);
 
@@ -399,7 +400,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                     stack.push(type);
                 break;
             }
-            case Opcode::else_: {
+            case else_: {
                 auto& label = stack.last_label();
                 VALIDATION_ASSERT(label.type == ValidatorLabelType::If);
 
@@ -415,7 +416,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 label.unreachable = false;
                 break;
             }
-            case Opcode::end: {
+            case end: {
                 auto& label = stack.last_label();
 
                 if (label.type == ValidatorLabelType::If)
@@ -432,7 +433,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.pop_label();
                 break;
             }
-            case Opcode::br: {
+            case br: {
                 const auto& label = stack.get_label(instruction.get_arguments<uint32_t>());
                 instruction.arguments = label.label;
 
@@ -444,7 +445,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.erase(stack.last_label().stackHeight, 0);
                 break;
             }
-            case Opcode::br_if: {
+            case br_if: {
                 const auto& label = stack.get_label(instruction.get_arguments<uint32_t>());
                 instruction.arguments = label.label;
 
@@ -462,7 +463,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
 
                 break;
             }
-            case Opcode::br_table: {
+            case br_table: {
                 const auto& arguments = instruction.get_arguments<BranchTableArgumentsPrevalidated>();
 
                 stack.expect(Type::i32);
@@ -508,14 +509,14 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.erase(stack.last_label().stackHeight, 0);
                 break;
             }
-            case Opcode::return_:
+            case return_:
                 for (const auto type : std::views::reverse(functionType.returns))
                     stack.expect(type);
 
                 stack.last_label().unreachable = true;
                 stack.erase(stack.last_label().stackHeight, 0);
                 break;
-            case Opcode::call: {
+            case call: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_functions.size());
 
                 const auto& calleeType = m_wasmFile->functionTypes[m_functions[instruction.get_arguments<uint32_t>()]];
@@ -526,7 +527,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                     stack.push(returned);
                 break;
             }
-            case Opcode::call_indirect: {
+            case call_indirect: {
                 const auto& arguments = instruction.get_arguments<CallIndirectArguments>();
 
                 stack.expect(Type::i32);
@@ -543,10 +544,10 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                     stack.push(returned);
                 break;
             }
-            case Opcode::drop:
+            case drop:
                 stack.pop();
                 break;
-            case Opcode::select_: {
+            case select_: {
                 stack.expect(Type::i32);
 
                 auto a = stack.pop();
@@ -557,7 +558,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 VALIDATION_ASSERT(a == Type::i32 || a == Type::i64 || a == Type::f32 || a == Type::f64 || a == Type::v128);
                 break;
             }
-            case Opcode::select_typed: {
+            case select_typed: {
                 // FIXME: This is duplicated with select
                 const auto& arguments = std::get<std::vector<uint8_t>>(instruction.arguments);
 
@@ -574,39 +575,39 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 VALIDATION_ASSERT(b == (Type)arguments[0]);
                 break;
             }
-            case Opcode::local_get:
+            case local_get:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < locals.size());
                 stack.push(locals[instruction.get_arguments<uint32_t>()]);
                 break;
-            case Opcode::local_set:
+            case local_set:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < locals.size());
                 stack.expect(locals[instruction.get_arguments<uint32_t>()]);
                 break;
-            case Opcode::local_tee:
+            case local_tee:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < locals.size());
                 stack.expect(locals[instruction.get_arguments<uint32_t>()]);
                 stack.push(locals[instruction.get_arguments<uint32_t>()]);
                 break;
-            case Opcode::global_get: {
+            case global_get: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_globals.size());
                 const auto& global = m_globals[instruction.get_arguments<uint32_t>()];
                 stack.push(global.first);
                 break;
             }
-            case Opcode::global_set: {
+            case global_set: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_globals.size());
                 const auto& global = m_globals[instruction.get_arguments<uint32_t>()];
                 VALIDATION_ASSERT(global.second == WasmFile::GlobalMutability::Variable);
                 stack.expect(global.first);
                 break;
             }
-            case Opcode::table_get: {
+            case table_get: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size());
                 stack.expect(Type::i32);
                 stack.push(m_tables[instruction.get_arguments<uint32_t>()]);
                 break;
             }
-            case Opcode::table_set: {
+            case table_set: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size());
                 stack.expect(m_tables[instruction.get_arguments<uint32_t>()]);
                 stack.expect(Type::i32);
@@ -627,25 +628,25 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 ENUMERATE_STORE_OPERATIONS(X)
 #undef X
 
-            case Opcode::memory_size:
+            case memory_size:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories);
                 stack.push(Type::i32);
                 break;
-            case Opcode::memory_grow:
+            case memory_grow:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories);
                 stack.expect(Type::i32);
                 stack.push(Type::i32);
                 break;
-            case Opcode::i32_const:
+            case i32_const:
                 stack.push(Type::i32);
                 break;
-            case Opcode::i64_const:
+            case i64_const:
                 stack.push(Type::i64);
                 break;
-            case Opcode::f32_const:
+            case f32_const:
                 stack.push(Type::f32);
                 break;
-            case Opcode::f64_const:
+            case f64_const:
                 stack.push(Type::f64);
                 break;
 
@@ -663,20 +664,20 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 ENUMERATE_BINARY_OPERATIONS(X)
 #undef X
 
-            case Opcode::ref_null:
+            case ref_null:
                 stack.push(instruction.get_arguments<Type>());
                 break;
-            case Opcode::ref_is_null:
+            case ref_is_null:
                 VALIDATION_ASSERT(stack.pop().is_reference_type());
                 stack.push(Type::i32);
                 break;
-            case Opcode::ref_func:
+            case ref_func:
                 // VALIDATION_ASSERT(vector_contains(m_declared_functions, instruction.get_arguments<uint32_t>()));
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_functions.size());
                 stack.push(Type::funcref);
                 break;
 
-            case Opcode::memory_init: {
+            case memory_init: {
                 VALIDATION_ASSERT(m_wasmFile->dataCount);
                 const auto& arguments = instruction.get_arguments<MemoryInitArguments>();
                 VALIDATION_ASSERT(arguments.memoryIndex < m_memories);
@@ -686,11 +687,11 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.expect(Type::i32);
                 break;
             }
-            case Opcode::data_drop:
+            case data_drop:
                 VALIDATION_ASSERT(m_wasmFile->dataCount);
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_wasmFile->dataBlocks.size());
                 break;
-            case Opcode::memory_copy: {
+            case memory_copy: {
                 const auto& arguments = instruction.get_arguments<MemoryCopyArguments>();
                 VALIDATION_ASSERT(arguments.destination < m_memories);
                 VALIDATION_ASSERT(arguments.source < m_memories);
@@ -699,13 +700,13 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.expect(Type::i32);
                 break;
             }
-            case Opcode::memory_fill:
+            case memory_fill:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories);
                 stack.expect(Type::i32);
                 stack.expect(Type::i32);
                 stack.expect(Type::i32);
                 break;
-            case Opcode::table_init: {
+            case table_init: {
                 const auto& arguments = instruction.get_arguments<TableInitArguments>();
                 VALIDATION_ASSERT(arguments.tableIndex < m_tables.size());
                 VALIDATION_ASSERT(arguments.elementIndex < m_wasmFile->elements.size());
@@ -715,10 +716,10 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.expect(Type::i32);
                 break;
             }
-            case Opcode::elem_drop:
+            case elem_drop:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_wasmFile->elements.size());
                 break;
-            case Opcode::table_copy: {
+            case table_copy: {
                 const auto& arguments = instruction.get_arguments<TableCopyArguments>();
                 VALIDATION_ASSERT(arguments.destination < m_tables.size());
                 VALIDATION_ASSERT(arguments.source < m_tables.size());
@@ -728,52 +729,52 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.expect(Type::i32);
                 break;
             }
-            case Opcode::table_grow:
+            case table_grow:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size());
                 stack.expect(Type::i32);
                 stack.expect(m_tables[instruction.get_arguments<uint32_t>()]);
                 stack.push(Type::i32);
                 break;
-            case Opcode::table_size:
+            case table_size:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size());
                 stack.push(Type::i32);
                 break;
-            case Opcode::table_fill:
+            case table_fill:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size());
                 stack.expect(Type::i32);
                 stack.expect(m_tables[instruction.get_arguments<uint32_t>()]);
                 stack.expect(Type::i32);
                 break;
-            case Opcode::v128_load8_splat:
+            case v128_load8_splat:
                 validate_load_operation(Type::v128, 8, instruction.get_arguments<WasmFile::MemArg>());
                 break;
-            case Opcode::v128_load16_splat:
+            case v128_load16_splat:
                 validate_load_operation(Type::v128, 16, instruction.get_arguments<WasmFile::MemArg>());
                 break;
-            case Opcode::v128_load32_splat:
-            case Opcode::v128_load32_zero:
+            case v128_load32_splat:
+            case v128_load32_zero:
                 validate_load_operation(Type::v128, 32, instruction.get_arguments<WasmFile::MemArg>());
                 break;
-            case Opcode::v128_load64_splat:
-            case Opcode::v128_load64_zero:
+            case v128_load64_splat:
+            case v128_load64_zero:
                 validate_load_operation(Type::v128, 64, instruction.get_arguments<WasmFile::MemArg>());
                 break;
-            case Opcode::v128_load8_lane:
+            case v128_load8_lane:
                 validate_load_lane_operation(Type::v128, 8, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
-            case Opcode::v128_load16_lane:
+            case v128_load16_lane:
                 validate_load_lane_operation(Type::v128, 16, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
-            case Opcode::v128_load32_lane:
+            case v128_load32_lane:
                 validate_load_lane_operation(Type::v128, 32, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
-            case Opcode::v128_load64_lane:
+            case v128_load64_lane:
                 validate_load_lane_operation(Type::v128, 64, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
-            case Opcode::v128_store8_lane:
-            case Opcode::v128_store16_lane:
-            case Opcode::v128_store32_lane:
-            case Opcode::v128_store64_lane: {
+            case v128_store8_lane:
+            case v128_store16_lane:
+            case v128_store32_lane:
+            case v128_store64_lane: {
                 const auto& arguments = instruction.get_arguments<LoadStoreLaneArguments>();
                 VALIDATION_ASSERT(arguments.memArg.memoryIndex < m_memories);
                 VALIDATION_ASSERT((1ull << arguments.memArg.align) <= 128 / 8);
@@ -781,86 +782,86 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.expect(Type::i32);
                 break;
             }
-            case Opcode::v128_const:
+            case v128_const:
                 stack.push(Type::v128);
                 break;
-            case Opcode::i8x16_shuffle: {
+            case i8x16_shuffle: {
                 const auto& lanes = instruction.get_arguments<uint8x16_t>();
                 for (uint8_t i = 0; i < 16; i++)
                     VALIDATION_ASSERT(lanes[i] < 32);
                 validate_binary_operation(Type::v128, Type::v128, Type::v128);
                 break;
             }
-            case Opcode::i8x16_extract_lane_s:
-            case Opcode::i8x16_extract_lane_u: {
+            case i8x16_extract_lane_s:
+            case i8x16_extract_lane_u: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 16);
                 stack.expect(Type::v128);
                 stack.push(Type::i32);
                 break;
             }
-            case Opcode::i16x8_extract_lane_s:
-            case Opcode::i16x8_extract_lane_u:
+            case i16x8_extract_lane_s:
+            case i16x8_extract_lane_u:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 8);
                 stack.expect(Type::v128);
                 stack.push(Type::i32);
                 break;
-            case Opcode::i32x4_extract_lane:
+            case i32x4_extract_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::v128);
                 stack.push(Type::i32);
                 break;
-            case Opcode::i64x2_extract_lane:
+            case i64x2_extract_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::v128);
                 stack.push(Type::i64);
                 break;
-            case Opcode::f32x4_extract_lane:
+            case f32x4_extract_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::v128);
                 stack.push(Type::f32);
                 break;
-            case Opcode::f64x2_extract_lane:
+            case f64x2_extract_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::v128);
                 stack.push(Type::f64);
                 break;
-            case Opcode::i8x16_replace_lane:
+            case i8x16_replace_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 16);
                 stack.expect(Type::i32);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::i16x8_replace_lane:
+            case i16x8_replace_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 8);
                 stack.expect(Type::i32);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::i32x4_replace_lane:
+            case i32x4_replace_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::i32);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::i64x2_replace_lane:
+            case i64x2_replace_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::i64);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::f32x4_replace_lane:
+            case f32x4_replace_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 4);
                 stack.expect(Type::f32);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::f64x2_replace_lane:
+            case f64x2_replace_lane:
                 VALIDATION_ASSERT(instruction.get_arguments<uint8_t>() < 2);
                 stack.expect(Type::f64);
                 stack.expect(Type::v128);
                 stack.push(Type::v128);
                 break;
-            case Opcode::v128_bitselect:
+            case v128_bitselect:
                 stack.expect(Type::v128);
                 stack.expect(Type::v128);
                 stack.expect(Type::v128);
@@ -884,15 +885,22 @@ void Validator::validate_constant_expression(const std::vector<Instruction>& ins
     // TODO: This is a hack to make the validator work with the current code
     stack.push_label(ValidatorLabel {});
 
+    auto validate_binary_operation = [&stack](Type type) {
+        stack.expect(type);
+        stack.expect(type);
+        stack.push(type);
+    };
+
     for (size_t ip = 0; ip < instructions.size(); ip++)
     {
         const auto& instruction = instructions[ip];
         switch (instruction.opcode)
         {
-            case Opcode::end:
+            using enum Opcode;
+            case end:
                 VALIDATION_ASSERT(ip == instructions.size() - 1);
                 break;
-            case Opcode::global_get: {
+            case global_get: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_globals.size());
                 if (globalRestrictions)
                     VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_imported_global_count);
@@ -901,27 +909,43 @@ void Validator::validate_constant_expression(const std::vector<Instruction>& ins
                 stack.push(global.first);
                 break;
             }
-            case Opcode::i32_const:
+            case i32_const:
                 stack.push(Type::i32);
                 break;
-            case Opcode::i64_const:
+            case i64_const:
                 stack.push(Type::i64);
                 break;
-            case Opcode::f32_const:
+            case f32_const:
                 stack.push(Type::f32);
                 break;
-            case Opcode::f64_const:
+            case f64_const:
                 stack.push(Type::f64);
                 break;
-            case Opcode::ref_null:
+            case i32_add:
+            case i32_sub:
+            case i32_mul:
+                if (g_enable_extended_const)
+                    validate_binary_operation(Type::i32);
+                else
+                    VALIDATION_ASSERT(false);
+                break;
+            case i64_add:
+            case i64_sub:
+            case i64_mul:
+                if (g_enable_extended_const)
+                    validate_binary_operation(Type::i64);
+                else
+                    VALIDATION_ASSERT(false);
+                break;
+            case ref_null:
                 stack.push(instruction.get_arguments<Type>());
                 break;
-            case Opcode::ref_func:
+            case ref_func:
                 // VALIDATION_ASSERT(vector_contains(m_declared_functions, instruction.get_arguments<uint32_t>()));
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_functions.size());
                 stack.push(Type::funcref);
                 break;
-            case Opcode::v128_const:
+            case v128_const:
                 stack.push(Type::v128);
                 break;
             default:

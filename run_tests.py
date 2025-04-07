@@ -34,9 +34,20 @@ for root, dirs, files in os.walk(TESTSUITE_PROCESSED_PATH):
     tests.append(root.removeprefix(TESTSUITE_PROCESSED_PATH))
 tests.sort()
 
+def get_additional_args(filename: str) -> str:
+    if filename.startswith("proposals/multi-memory"):
+        return "--enable-multi-memory"
+    if filename.startswith("proposals/extended-const"):
+        return "--enable-extended-const"
+    assert False
+
 for filename in tests:
     if os.path.exists(os.path.join(TESTSUITE_PROCESSED_PATH, filename, filename.split("/")[-1] + ".json")):
-        process = subprocess.run(["build/wasvm", "-t", filename], capture_output=True)
+        process = None
+        if filename.startswith("proposals"):
+            process = subprocess.run(["build/wasvm", "-t", filename, get_additional_args(filename)], capture_output=True)
+        else:
+            process = subprocess.run(["build/wasvm", "-t", filename], capture_output=True)
         if process.returncode != 0:
             print(f"{filename:<50} {colored("vm crashed", DARK_RED)}")
             crashes.append(filename)
