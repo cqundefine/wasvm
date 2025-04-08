@@ -120,16 +120,14 @@ constexpr Result saturate_to(T a)
 template <std::integral T>
 constexpr T saturating_add(T a, T b)
 {
-    using Convertee = std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
-    Convertee result = static_cast<Convertee>(a) + static_cast<Convertee>(b);
+    int64_t result = static_cast<int64_t>(a) + static_cast<int64_t>(b);
     return saturate_to<T>(result);
 }
 
 template <std::integral T>
 constexpr T saturating_sub(T a, T b)
 {
-    using Convertee = std::conditional_t<std::is_signed_v<T>, int64_t, uint64_t>;
-    Convertee result = static_cast<Convertee>(a) - static_cast<Convertee>(b);
+    int64_t result = static_cast<int64_t>(a) - static_cast<int64_t>(b);
     return saturate_to<T>(result);
 }
 

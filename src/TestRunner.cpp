@@ -210,6 +210,7 @@ struct std::formatter<TestValue>
 
 std::optional<TestValue> parse_value(nlohmann::json json)
 {
+    // FIXME: This still doesn't parse NaNs entirely properly
     try
     {
         std::string type = json["type"];
