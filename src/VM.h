@@ -45,8 +45,6 @@ public:
 
     static Frame* frame() { return m_frame; }
 
-    static void set_force_jit(bool force_jit) { m_force_jit = force_jit; }
-
 private:
     static Value run_bare_code(Ref<Module> mod, const std::vector<Instruction>& instructions);
 
@@ -82,6 +80,4 @@ private:
     static inline std::stack<Frame*> m_frame_stack;
     static inline Ref<Module> m_current_module;
     static inline std::map<std::string, Ref<Module>> m_registered_modules;
-
-    static inline bool m_force_jit = false;
 };

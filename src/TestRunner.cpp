@@ -1,4 +1,3 @@
-#include <Compiler.h>
 #include <FileStream.h>
 #include <SIMD.h>
 #include <TestRunner.h>
@@ -302,21 +301,11 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string&
         if (failed)
             return {};
 
-        try
-        {
-            std::string field = action["field"];
-            if (action.contains("module"))
-                return VM::run_function(action["module"], field, args);
-            else
-                return VM::run_function(field, args);
-        }
-        catch (JITCompilationException e)
-        {
-            stats.skipped++;
-            failed = true;
-            std::println("{}/{} skipped: failed to compile JIT code", path, line);
-            return {};
-        }
+        std::string field = action["field"];
+        if (action.contains("module"))
+            return VM::run_function(action["module"], field, args);
+        else
+            return VM::run_function(field, args);
     }
     else if (actionType == "get")
     {
@@ -390,12 +379,6 @@ TestStats run_tests(const std::string& path)
                 stats.failed_to_load++;
             }
             catch (Trap e)
-            {
-                std::println("{}/{} module failed to load", path, line);
-                module_loaded = false;
-                stats.failed_to_load++;
-            }
-            catch (JITCompilationException e)
             {
                 std::println("{}/{} module failed to load", path, line);
                 module_loaded = false;

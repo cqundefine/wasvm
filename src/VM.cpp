@@ -1,4 +1,3 @@
-#include <Compiler.h>
 #include <Opcode.h>
 #include <Operators.h>
 #include <SIMD.h>
@@ -189,25 +188,6 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
     for (const auto local : function->code.locals)
         m_frame->locals.push_back(default_value_for_type(local));
-
-    if (m_force_jit)
-    {
-        try
-        {
-            auto jittedCode = Compiler::compile(function, mod->wasmFile);
-            Value returnValue;
-            jittedCode(m_frame->locals.data(), &returnValue);
-            if (function->type.returns.size() == 0)
-                return {};
-            else
-                return { returnValue };
-        }
-        catch (JITCompilationException error)
-        {
-            std::println(std::cerr, "Failed to compile JIT");
-            throw JITCompilationException();
-        }
-    }
 
     while (m_frame->ip < function->code.instructions.size())
     {

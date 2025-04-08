@@ -21,10 +21,6 @@ int main(int argc, char** argv)
         .help("which function of a module to run")
         .default_value(std::string("_start"));
 
-    parser.add_argument("-j", "--force-jit")
-        .help("force the usage of the experimental JIT")
-        .flag();
-
     parser.add_argument("-n", "--no-wasm-validator")
         .help("disable validation of WASM module")
         .flag();
@@ -57,8 +53,6 @@ int main(int argc, char** argv)
 
     g_enable_multi_memory = parser["--enable-multi-memory"] == true;
     g_enable_extended_const = parser["--enable-extended-const"] == true;
-
-    VM::set_force_jit(parser["-j"] == true);
 
     if (parser["--load-test-module"] == true)
     {
