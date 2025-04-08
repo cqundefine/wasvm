@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <bits/floatn-common.h>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <sys/time.h>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #if defined(__linux__)
@@ -30,6 +32,12 @@
 
 #define OFFSET_OF(class, member) (reinterpret_cast<ptrdiff_t>(&reinterpret_cast<class*>(0x1000)->member) - 0x1000)
 
+#define UNREACHABLE()       \
+    {                       \
+        assert(false);      \
+        std::unreachable(); \
+    }
+
 template <typename T>
 using Own = std::unique_ptr<T>;
 template <typename T, typename... Args>
@@ -51,6 +59,9 @@ constexpr Ref<T> StaticRefCast(const Ref<Base>& base)
 {
     return std::static_pointer_cast<T>(base);
 }
+
+template <typename T, typename... U>
+concept IsAnyOf = (std::same_as<T, U> || ...);
 
 void fill_buffer_with_random_data(uint8_t* data, size_t size);
 

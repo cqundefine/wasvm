@@ -1,4 +1,5 @@
 #include <Parser.h>
+#include <Util.h>
 #include <Value.h>
 #include <cassert>
 #include <iostream>
@@ -99,7 +100,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                         instructions[arguments.elseLocation.value()].arguments = label;
                 }
                 else
-                    assert(false);
+                    UNREACHABLE();
 
                 break;
             }
@@ -156,10 +157,10 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_typed<WasmFile::MemArg>() });
                 break;
             case i32_const:
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = (uint32_t)stream.read_leb<int32_t, 32>() });
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint32_t>(stream.read_leb<int32_t, 32>()) });
                 break;
             case i64_const:
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = (uint64_t)stream.read_leb<int64_t, 64>() });
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint64_t>(stream.read_leb<int64_t, 64>()) });
                 break;
             case f32_const:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_little_endian<float>() });
@@ -168,7 +169,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_little_endian<double>() });
                 break;
             case ref_null: {
-                Type type = (Type)stream.read_little_endian<uint8_t>();
+                Type type = static_cast<Type>(stream.read_little_endian<uint8_t>());
                 if (!is_reference_type(type))
                     throw WasmFile::InvalidWASMException();
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = type });
@@ -176,7 +177,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             }
             case multi_byte_fc: {
                 MultiByteFC secondByte = static_cast<MultiByteFC>(stream.read_leb<uint32_t>());
-                Opcode realOpcode = (Opcode)((((uint32_t)opcode) << 8) | ((uint32_t)secondByte));
+                Opcode realOpcode = static_cast<Opcode>(((static_cast<uint32_t>(opcode)) << 8) | static_cast<uint32_t>(secondByte));
                 switch (secondByte)
                 {
                     using enum MultiByteFC;
@@ -218,7 +219,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             }
             case multi_byte_fd: {
                 MultiByteFD secondByte = static_cast<MultiByteFD>(stream.read_leb<uint32_t>());
-                Opcode realOpcode = (Opcode)((((uint32_t)opcode) << 8) | ((uint32_t)secondByte));
+                Opcode realOpcode = static_cast<Opcode>(((static_cast<uint32_t>(opcode)) << 8) | static_cast<uint32_t>(secondByte));
                 switch (secondByte)
                 {
                     using enum MultiByteFD;

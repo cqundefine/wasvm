@@ -89,6 +89,6 @@ int main(int argc, char** argv)
 
         std::vector<Value> returnValues = VM::run_function(parser.get("-f"), {});
         for (const auto value : returnValues)
-            std::println("{}", value_to_string(value));
+            std::println("{}", value);
     }
 }

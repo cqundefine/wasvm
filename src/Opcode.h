@@ -1082,4 +1082,3 @@ enum class MultiByteFD
     X(i64x2_extmul_high_i32x4_s, vector_extend_multiply_high<int64x2_t>, int32x4_t, int32x4_t, int64x2_t)     \
     X(i64x2_extmul_low_i32x4_u, vector_extend_multiply_low<uint64x2_t>, uint32x4_t, uint32x4_t, uint64x2_t)   \
     X(i64x2_extmul_high_i32x4_u, vector_extend_multiply_high<uint64x2_t>, uint32x4_t, uint32x4_t, uint64x2_t)
-\

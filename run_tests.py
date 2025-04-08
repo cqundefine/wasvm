@@ -69,11 +69,11 @@ for filename in tests:
             failed_to_load += data["failed_to_load"]
 
 print("-------------------------------------------")
-print(f"{"Total:":<50} {total}", )
-print(f"{"Passed:":<50} {colored(passed, GREEN)}")
-print(f"{"Failed:":<50} {colored(failed, RED)}")
-print(f"{"Skipped:":<50} {colored(skipped, YELLOW)}")
-print(f"{"Failed to load:":<50} {colored(failed_to_load, DARK_RED)}")
+print(f"{"Total:":<50} {total}")
+print(f"{"Passed:":<50} {colored(passed, GREEN)} ({colored(f'{passed / total * 100:.2f}%', GREEN)})")
+print(f"{"Failed:":<50} {colored(failed, RED)} ({colored(f'{failed / total * 100:.2f}%', RED)})")
+print(f"{"Skipped:":<50} {colored(skipped, YELLOW)} ({colored(f'{skipped / total * 100:.2f}%', YELLOW)})")
+print(f"{"Failed to load:":<50} {colored(failed_to_load, DARK_RED)} ({colored(f'{failed_to_load / total * 100:.2f}%', DARK_RED)})")
 print(f"{"VM errors:":<50} {colored(vm_error, DARK_RED)}")
 if len(crashes) != 0:
     print("Crashes:")

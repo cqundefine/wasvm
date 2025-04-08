@@ -1,9 +1,12 @@
 #pragma once
 
 #include <SIMD.h>
+#include <Type.h>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <utility>
 
 struct Trap
 {
@@ -39,25 +42,27 @@ struct Reference
 };
 
 template <typename T>
-extern const char* value_type_name;
+inline constexpr const char* value_type_name = []() {
+    static_assert(false);
+};
 
 template <>
-extern const char* value_type_name<uint32_t>;
+inline constexpr const char* value_type_name<uint32_t> = "i32";
 
 template <>
-extern const char* value_type_name<uint64_t>;
+inline constexpr const char* value_type_name<uint64_t> = "i64";
 
 template <>
-extern const char* value_type_name<float>;
+inline constexpr const char* value_type_name<float> = "f32";
 
 template <>
-extern const char* value_type_name<double>;
+inline constexpr const char* value_type_name<double> = "f64";
 
 template <>
-extern const char* value_type_name<uint128_t>;
+inline constexpr const char* value_type_name<uint128_t> = "v128";
 
 template <>
-extern const char* value_type_name<Reference>;
+inline constexpr const char* value_type_name<Reference> = "funcref / externref";
 
 template <typename T, typename = void>
 struct ToValueTypeHelper
@@ -87,9 +92,6 @@ static_assert(std::is_same<ToValueType<float>, float>());
 static_assert(std::is_same<ToValueType<Reference>, Reference>());
 static_assert(std::is_same<ToValueType<uint128_t>, uint128_t>());
 static_assert(std::is_same<ToValueType<int64x2_t>, uint128_t>());
-
-template <typename T, typename... U>
-concept IsAnyOf = (std::same_as<T, U> || ...);
 
 template <typename T>
 concept IsValueType = IsAnyOf<ToValueType<T>, uint32_t, uint64_t, float, double, uint128_t, Reference>;
@@ -167,6 +169,8 @@ public:
         return m_type;
     }
 
+    bool operator==(const Value& other) const;
+
     static consteval ptrdiff_t data_offset()
     {
         return offsetof(Value, m_data);
@@ -211,8 +215,43 @@ private:
             return Type::UInt128;
         if constexpr (std::is_same_v<T, Reference>)
             return Type::Reference;
-        return Type::UInt32; // Should never reach here
+        std::unreachable();
+        assert(false);
     }
 };
 
-std::string value_to_string(Value value);
+template <>
+struct std::formatter<Value>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return std::cbegin(ctx);
+    }
+
+    auto format(const Value& obj, std::format_context& ctx) const
+    {
+        auto type = get_type_name(get_value_type(obj));
+        if (obj.holds_alternative<uint32_t>())
+            return std::format_to(ctx.out(), "{}({})", type, obj.get<uint32_t>());
+        if (obj.holds_alternative<uint64_t>())
+            return std::format_to(ctx.out(), "{}({})", type, obj.get<uint64_t>());
+        if (obj.holds_alternative<float>())
+            return std::format_to(ctx.out(), "{}({})", type, obj.get<float>());
+        if (obj.holds_alternative<double>())
+            return std::format_to(ctx.out(), "{}({})", type, obj.get<double>());
+        if (obj.holds_alternative<uint128_t>())
+            return std::format_to(ctx.out(), "{}({})", type, obj.get<uint128_t>());
+        if (obj.holds_alternative<Reference>())
+        {
+            uint32_t index = obj.get<Reference>().index;
+            if (index == UINT32_MAX)
+                return std::format_to(ctx.out(), "{}(null)", type);
+            else
+                return std::format_to(ctx.out(), "{}({})", type, index);
+        }
+
+        UNREACHABLE();
+    }
+};
+
+Value::Type value_type_from_type(Type type);

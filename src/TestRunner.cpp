@@ -1,34 +1,214 @@
 #include <Compiler.h>
 #include <FileStream.h>
+#include <SIMD.h>
 #include <TestRunner.h>
+#include <Util.h>
 #include <VM.h>
+#include <Value.h>
 #include <bit>
+#include <concepts>
 #include <fstream>
 #include <math.h>
 #include <nlohmann/json.hpp>
 #include <print>
 #include <unistd.h>
+#include <utility>
+#include <variant>
 
-// FIXME: Better NAN handling, this is a hack
-
-bool float_equals(float a, float b)
+struct ArithmeticNaN
 {
-    if (std::isnan(a) && std::isnan(b))
-        return true;
-    return a == b;
+    uint8_t bits;
+
+    bool operator==(Value value) const
+    {
+        if (bits == 32)
+        {
+            if (!value.holds_alternative<float>())
+                return false;
+            return std::isnan(value.get<float>());
+        }
+
+        if (bits == 64)
+        {
+            if (!value.holds_alternative<double>())
+                return false;
+            return std::isnan(value.get<double>());
+        }
+
+        UNREACHABLE();
+    }
+};
+
+struct CanonicalNaN
+{
+    uint8_t bits;
+
+    bool operator==(Value value) const
+    {
+        if (bits == 32)
+        {
+            if (!value.holds_alternative<float>())
+                return false;
+            return std::bit_cast<uint32_t>(value.get<float>()) == 0x7FC00000 || std::bit_cast<uint32_t>(value.get<float>()) == 0xFFC00000;
+        }
+
+        if (bits == 64)
+        {
+            if (!value.holds_alternative<double>())
+                return false;
+            return std::bit_cast<uint64_t>(value.get<double>()) == 0x7FF8000000000000 || std::bit_cast<uint64_t>(value.get<double>()) == 0xFFF8000000000000;
+        }
+
+        UNREACHABLE();
+    }
+};
+
+uint128_t getLane(uint128_t vector, uint8_t laneSize, uint8_t lane)
+{
+    switch (laneSize)
+    {
+        case 8:
+            return std::bit_cast<uint8x16_t>(vector)[lane];
+        case 16:
+            return std::bit_cast<uint16x8_t>(vector)[lane];
+        case 32:
+            return std::bit_cast<uint32x4_t>(vector)[lane];
+        case 64:
+            return std::bit_cast<uint64x2_t>(vector)[lane];
+        default:
+            UNREACHABLE();
+    }
 }
 
-bool double_equals(double a, double b)
+struct TestVector
 {
-    if (std::isnan(a) && std::isnan(b))
+    std::vector<std::variant<uint128_t, ArithmeticNaN, CanonicalNaN>> lanes;
+
+    Value to_value() const
+    {
+        // FIXME: Handle NaN
+        uint8_t laneSize = 128 / lanes.size();
+        uint128_t valueInt = 0;
+        for (size_t i = 0; i < lanes.size(); i++)
+            if (std::holds_alternative<uint128_t>(lanes[i]))
+                valueInt |= std::get<uint128_t>(lanes[i]) << (laneSize * i);
+
+        return valueInt;
+    }
+
+    bool operator==(Value value) const
+    {
+        if (!value.holds_alternative<uint128_t>())
+            return false;
+        auto vector = value.get<uint128_t>();
+
+        // return to_value() == value;
+
+        uint8_t laneSize = 128 / lanes.size();
+
+        for (size_t i = 0; i < lanes.size(); i++)
+            if (std::holds_alternative<uint128_t>(lanes[i]))
+            {
+                if (std::get<uint128_t>(lanes[i]) != getLane(vector, laneSize, i))
+                    return false;
+            }
+            else if (std::holds_alternative<ArithmeticNaN>(lanes[i]))
+            {
+                if (laneSize == 32)
+                {
+                    if (std::get<ArithmeticNaN>(lanes[i]) != std::bit_cast<float32_t>(static_cast<uint32_t>(getLane(vector, laneSize, i))))
+                        return false;
+                }
+                else
+                {
+                    if (std::get<ArithmeticNaN>(lanes[i]) != std::bit_cast<float64_t>(static_cast<uint64_t>(getLane(vector, laneSize, i))))
+                        return false;
+                }
+            }
+            else if (std::holds_alternative<CanonicalNaN>(lanes[i]))
+            {
+                if (laneSize == 32)
+                {
+                    if (std::get<CanonicalNaN>(lanes[i]) != std::bit_cast<float32_t>(static_cast<uint32_t>(getLane(vector, laneSize, i))))
+                        return false;
+                }
+                else
+                {
+                    if (std::get<CanonicalNaN>(lanes[i]) != std::bit_cast<float64_t>(static_cast<uint64_t>(getLane(vector, laneSize, i))))
+                        return false;
+                }
+            }
+
         return true;
-    return a == b;
-}
+    }
+};
 
-#define ENABLE_INVALID_TESTS
-// #define COMPLAIN_ABOUT_EXHAUSTION
+class TestValue
+{
+public:
+    friend std::formatter<TestValue>;
 
-std::optional<Value> parse_value(nlohmann::json json)
+    template <IsValueType T>
+    TestValue(T value)
+        : value(value)
+    {
+    }
+
+    template <IsAnyOf<ArithmeticNaN, CanonicalNaN, TestVector, Value> T>
+    TestValue(T value)
+        : value(value)
+    {
+    }
+
+    bool operator==(const Value& other) const
+    {
+        if (std::holds_alternative<ArithmeticNaN>(value))
+            return std::get<ArithmeticNaN>(value) == other;
+        if (std::holds_alternative<CanonicalNaN>(value))
+            return std::get<CanonicalNaN>(value) == other;
+        if (std::holds_alternative<Value>(value))
+            return std::get<Value>(value) == other;
+        if (std::holds_alternative<TestVector>(value))
+            return std::get<TestVector>(value) == other;
+
+        UNREACHABLE();
+    }
+
+    Value get_value() const
+    {
+        if (std::holds_alternative<Value>(value))
+            return std::get<Value>(value);
+        if (std::holds_alternative<TestVector>(value))
+            return std::get<TestVector>(value).to_value();
+        UNREACHABLE();
+    }
+
+private:
+    std::variant<ArithmeticNaN, CanonicalNaN, TestVector, Value> value;
+};
+
+template <>
+struct std::formatter<TestValue>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return std::cbegin(ctx);
+    }
+
+    auto format(const TestValue& obj, std::format_context& ctx) const
+    {
+        if (std::holds_alternative<ArithmeticNaN>(obj.value))
+            return std::format_to(ctx.out(), "nan:arithmetic");
+        if (std::holds_alternative<CanonicalNaN>(obj.value))
+            return std::format_to(ctx.out(), "nan:canonical");
+        if (std::holds_alternative<Value>(obj.value) || std::holds_alternative<TestVector>(obj.value))
+            return std::format_to(ctx.out(), "{}", obj.get_value());
+
+        UNREACHABLE();
+    }
+};
+
+std::optional<TestValue> parse_value(nlohmann::json json)
 {
     try
     {
@@ -36,26 +216,19 @@ std::optional<Value> parse_value(nlohmann::json json)
         if (type == "v128")
         {
             std::string laneType = json["lane_type"];
-            uint128_t value = 0;
-            uint8_t shiftCount;
-            if (laneType == "i8")
-                shiftCount = 8;
-            else if (laneType == "i16")
-                shiftCount = 16;
-            else if (laneType == "i32" || laneType == "f32")
-                shiftCount = 32;
-            else if (laneType == "i64" || laneType == "f64")
-                shiftCount = 64;
-            else
-                return {};
 
+            std::vector<std::variant<uint128_t, ArithmeticNaN, CanonicalNaN>> lanes;
             for (size_t i = 0; i < json["value"].size(); i++)
             {
                 auto lane = json["value"][i];
-                uint128_t laneInt = static_cast<uint128_t>(std::stoull(lane.get<std::string>()));
-                value |= laneInt << (shiftCount * i);
+                if (lane == "nan:arithmetic")
+                    lanes.push_back(ArithmeticNaN { laneType == "f32" ? uint8_t { 32 } : uint8_t { 64 } });
+                else if (lane == "nan:canonical")
+                    lanes.push_back(CanonicalNaN { laneType == "f32" ? uint8_t { 32 } : uint8_t { 64 } });
+                else
+                    lanes.push_back(static_cast<uint128_t>(std::stoull(lane.get<std::string>())));
             }
-            return value;
+            return TestVector { lanes };
         }
 
         std::string value = json["value"];
@@ -67,15 +240,25 @@ std::optional<Value> parse_value(nlohmann::json json)
 
         if (type == "f32")
         {
-            if (value.starts_with("nan"))
+            if (value == "nan")
                 return typed_nan<float>();
+            if (value == "nan:arithmetic")
+                return ArithmeticNaN { 32 };
+            if (value == "nan:canonical")
+                return CanonicalNaN { 32 };
+
             uint32_t rawValue = static_cast<uint32_t>(std::stoull(value));
             return std::bit_cast<float>(rawValue);
         }
         if (type == "f64")
         {
-            if (value.starts_with("nan"))
-                return typed_nan<double>();
+            if (value == "nan")
+                return typed_nan<float>();
+            if (value == "nan:arithmetic")
+                return ArithmeticNaN { 64 };
+            if (value == "nan:canonical")
+                return CanonicalNaN { 64 };
+
             uint64_t rawValue = static_cast<uint64_t>(std::stoull(value));
             return std::bit_cast<double>(rawValue);
         }
@@ -91,39 +274,6 @@ std::optional<Value> parse_value(nlohmann::json json)
     {
         return {};
     }
-}
-
-bool compare_values(Value a, Value b)
-{
-    if (a.get_type() != b.get_type())
-        return false;
-
-    if (a.holds_alternative<uint32_t>())
-        return a.get<uint32_t>() == b.get<uint32_t>();
-    if (a.holds_alternative<uint64_t>())
-        return a.get<uint64_t>() == b.get<uint64_t>();
-
-    if (a.holds_alternative<float>())
-        return float_equals(a.get<float>(), b.get<float>());
-    if (a.holds_alternative<double>())
-        return double_equals(a.get<double>(), b.get<double>());
-
-    if (a.holds_alternative<uint128_t>())
-        return a.get<uint128_t>() == b.get<uint128_t>();
-
-    if (a.holds_alternative<Reference>())
-    {
-        auto refA = a.get<Reference>();
-        auto refB = b.get<Reference>();
-
-        if (refA.type != refB.type)
-            return false;
-
-        return refA.index == refB.index;
-    }
-
-    assert(false);
-    std::unreachable();
 }
 
 std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string& path, uint32_t line, nlohmann::json action)
@@ -144,7 +294,7 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string&
             }
             else
             {
-                args.push_back(value.value());
+                args.push_back(value.value().get_value());
             }
         }
 
@@ -347,11 +497,11 @@ TestStats run_tests(const std::string& path)
                     break;
                 }
                 auto expectedValue = maybeExpectedValue.value();
-                if (!compare_values(returnValues[i], expectedValue))
+                if (expectedValue != returnValues[i])
                 {
                     stats.failed++;
                     failed = true;
-                    std::println("{}/{} failed: return value {} has unexpected value {}, expected {}", path, line, i, value_to_string(returnValues[i]), value_to_string(expectedValue));
+                    std::println("{}/{} failed: return value {} has unexpected value {}, expected {}", path, line, i, returnValues[i], expectedValue);
                     break;
                 }
             }
@@ -362,7 +512,7 @@ TestStats run_tests(const std::string& path)
                 std::println("{}/{} passed", path, line);
             }
         }
-        else if (type == "assert_trap")
+        else if (type == "assert_trap" || type == "assert_exhaustion")
         {
             stats.total++;
 
@@ -391,15 +541,6 @@ TestStats run_tests(const std::string& path)
                 std::println("{}/{} passed", path, line);
             }
         }
-#ifdef COMPLAIN_ABOUT_EXHAUSTION
-        else if (type == "assert_exhaustion")
-        {
-            std::println("{}/{} failed: exhaustion not implemented", path, line);
-            stats.total++;
-            stats.failed++;
-        }
-#endif
-#ifdef ENABLE_INVALID_TESTS
         else if (type == "assert_invalid" || type == "assert_malformed")
         {
             if (command["module_type"] != "binary")
@@ -454,14 +595,11 @@ TestStats run_tests(const std::string& path)
                 std::println("{}/{} passed", path, line);
             }
         }
-#endif
         else
         {
-#if defined(ENABLE_INVALID_TESTS) && defined(COMPLAIN_ABOUT_EXHAUSTION)
             std::println("command type unsupported: {}", type);
             stats.total++;
             stats.skipped++;
-#endif
         }
     }
 

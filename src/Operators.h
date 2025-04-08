@@ -27,7 +27,7 @@
         requires(!IsVector<LhsType> && !IsVector<RhsType>) \
     constexpr Value operation_##name(LhsType a, RhsType b) \
     {                                                      \
-        return (uint32_t)(a op b);                         \
+        return static_cast<uint32_t>(a op b);              \
     }                                                      \
     template <typename LhsType, typename RhsType>          \
         requires(IsVector<LhsType> && IsVector<RhsType>)   \
