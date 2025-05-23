@@ -46,7 +46,7 @@ namespace WasmFile
 
         static Limits read_from_stream(Stream& stream);
 
-        inline bool fits_within(const Limits& other) const
+        bool fits_within(const Limits& other) const
         {
             return min >= other.min && (!other.max.has_value() || (max.has_value() && max.value() <= other.max.value()));
         }
@@ -68,7 +68,7 @@ namespace WasmFile
 
         static FunctionType read_from_stream(Stream& stream);
 
-        inline bool operator==(const FunctionType& other) const
+        bool operator==(const FunctionType& other) const
         {
             return params == other.params && returns == other.returns;
         }

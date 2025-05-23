@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Util.h"
 #include <SIMD.h>
 #include <Type.h>
 #include <cassert>
@@ -102,7 +103,7 @@ class Value
 
 public:
     // Enum class for types
-    enum class Type : uint64_t
+    enum class Type
     {
         UInt32,
         UInt64,
@@ -111,7 +112,6 @@ public:
         UInt128,
         Reference
     };
-    static_assert(sizeof(Type) == sizeof(uint64_t));
 
     // Default constructor
     constexpr Value()
@@ -171,16 +171,6 @@ public:
 
     bool operator==(const Value& other) const;
 
-    static consteval ptrdiff_t data_offset()
-    {
-        return offsetof(Value, m_data);
-    }
-
-    static consteval ptrdiff_t type_offset()
-    {
-        return offsetof(Value, m_type);
-    }
-
 private:
     union Data
     {
@@ -215,8 +205,8 @@ private:
             return Type::UInt128;
         if constexpr (std::is_same_v<T, Reference>)
             return Type::Reference;
-        std::unreachable();
-        assert(false);
+
+        UNREACHABLE();
     }
 };
 
@@ -253,5 +243,3 @@ struct std::formatter<Value>
         UNREACHABLE();
     }
 };
-
-Value::Type value_type_from_type(Type type);

@@ -32,10 +32,10 @@
 
 #define OFFSET_OF(class, member) (reinterpret_cast<ptrdiff_t>(&reinterpret_cast<class*>(0x1000)->member) - 0x1000)
 
-#define UNREACHABLE()       \
-    {                       \
-        assert(false);      \
-        std::unreachable(); \
+#define UNREACHABLE()                                                \
+    {                                                                \
+        assert(false); /* NOLINT(cert-dcl03-c,misc-static-assert) */ \
+        std::unreachable();                                          \
     }
 
 template <typename T>
@@ -82,9 +82,7 @@ consteval T typed_nan()
 template <typename T>
 bool vector_contains(const std::vector<T>& v, T x)
 {
-    if (std::find(v.begin(), v.end(), x) != v.end())
-        return true;
-    return false;
+    return std::find(v.begin(), v.end(), x) != v.end();
 }
 
 bool is_valid_utf8(const std::string& string);

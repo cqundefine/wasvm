@@ -76,54 +76,48 @@ namespace WasmFile
         std::string name = stream.read_typed<std::string>();
 
         uint8_t type = stream.read_leb<uint8_t>();
-        if (type == 0)
+        switch (type)
         {
-            return Import {
-                .type = ImportType::Function,
-                .environment = environment,
-                .name = name,
-                .functionTypeIndex = stream.read_leb<uint32_t>(),
-            };
-        }
-        else if (type == 1)
-        {
-            return Import {
-                .type = ImportType::Table,
-                .environment = environment,
-                .name = name,
-                .tableRefType = read_type_from_stream(stream),
-                .tableLimits = stream.read_typed<Limits>(),
-            };
-        }
-        else if (type == 2)
-        {
-            return Import {
-                .type = ImportType::Memory,
-                .environment = environment,
-                .name = name,
-                .memoryLimits = stream.read_typed<Limits>(),
-            };
-        }
-        else if (type == 3)
-        {
-            auto type = read_type_from_stream(stream);
-            auto mut = (GlobalMutability)stream.read_little_endian<uint8_t>();
+            case 0:
+                return Import {
+                    .type = ImportType::Function,
+                    .environment = environment,
+                    .name = name,
+                    .functionTypeIndex = stream.read_leb<uint32_t>(),
+                };
+            case 1:
+                return Import {
+                    .type = ImportType::Table,
+                    .environment = environment,
+                    .name = name,
+                    .tableRefType = read_type_from_stream(stream),
+                    .tableLimits = stream.read_typed<Limits>(),
+                };
+            case 2:
+                return Import {
+                    .type = ImportType::Memory,
+                    .environment = environment,
+                    .name = name,
+                    .memoryLimits = stream.read_typed<Limits>(),
+                };
+            case 3: {
+                auto type = read_type_from_stream(stream);
+                auto mut = (GlobalMutability)stream.read_little_endian<uint8_t>();
 
-            if (mut != GlobalMutability::Constant && mut != GlobalMutability::Variable)
+                if (mut != GlobalMutability::Constant && mut != GlobalMutability::Variable)
+                    throw InvalidWASMException();
+
+                return Import {
+                    .type = ImportType::Global,
+                    .environment = environment,
+                    .name = name,
+                    .globalType = type,
+                    .globalMut = mut,
+                };
+            }
+            default:
+                std::println(std::cerr, "Error: Invalid import type: {}", type);
                 throw InvalidWASMException();
-
-            return Import {
-                .type = ImportType::Global,
-                .environment = environment,
-                .name = name,
-                .globalType = type,
-                .globalMut = mut,
-            };
-        }
-        else
-        {
-            std::println(std::cerr, "Error: Invalid import type: {}", type);
-            throw InvalidWASMException();
         }
     }
 
@@ -253,40 +247,35 @@ namespace WasmFile
     Data Data::read_from_stream(Stream& stream)
     {
         uint32_t type = stream.read_leb<uint32_t>();
-        if (type == 0)
+        switch (type)
         {
-            return Data {
-                .type = type,
-                .memoryIndex = 0,
-                .expr = parse(stream, s_currentWasmFile),
-                .data = stream.read_vec<uint8_t>(),
-                .mode = ElementMode::Active,
-            };
-        }
-        else if (type == 1)
-        {
-            return Data {
-                .type = type,
-                .memoryIndex = (uint32_t)-1,
-                .expr = {},
-                .data = stream.read_vec<uint8_t>(),
-                .mode = ElementMode::Passive,
-            };
-        }
-        else if (type == 2)
-        {
-            return Data {
-                .type = type,
-                .memoryIndex = stream.read_leb<uint32_t>(),
-                .expr = parse(stream, s_currentWasmFile),
-                .data = stream.read_vec<uint8_t>(),
-                .mode = ElementMode::Active,
-            };
-        }
-        else
-        {
-            std::println(std::cerr, "Unsupported data type: {}", type);
-            throw InvalidWASMException();
+            case 0:
+                return Data {
+                    .type = type,
+                    .memoryIndex = 0,
+                    .expr = parse(stream, s_currentWasmFile),
+                    .data = stream.read_vec<uint8_t>(),
+                    .mode = ElementMode::Active,
+                };
+            case 1:
+                return Data {
+                    .type = type,
+                    .memoryIndex = (uint32_t)-1,
+                    .expr = {},
+                    .data = stream.read_vec<uint8_t>(),
+                    .mode = ElementMode::Passive,
+                };
+            case 2:
+                return Data {
+                    .type = type,
+                    .memoryIndex = stream.read_leb<uint32_t>(),
+                    .expr = parse(stream, s_currentWasmFile),
+                    .data = stream.read_vec<uint8_t>(),
+                    .mode = ElementMode::Active,
+                };
+            default:
+                std::println(std::cerr, "Unsupported data type: {}", type);
+                throw InvalidWASMException();
         }
     }
 

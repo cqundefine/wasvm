@@ -182,7 +182,9 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
     DEFER(clean_up_frame());
 
-    // FIXME: Are we sure that args is the correct size
+    if (args.size() != function->type.params.size())
+        throw Trap();
+
     for (const auto& param : args)
         m_frame->locals.push_back(param);
 
@@ -260,7 +262,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 if (reference.type != ReferenceType::Function)
                     throw Trap();
 
-                auto module = reference.module ? reference.module : mod.get();
+                auto* module = reference.module ? reference.module : mod.get();
                 auto function = module->functions[reference.index];
 
                 if (function->type != module->wasmFile->functionTypes[arguments.typeIndex])

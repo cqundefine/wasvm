@@ -46,7 +46,7 @@ int main(int argc, char** argv)
     }
     catch (const std::exception& err)
     {
-        std::cerr << err.what() << std::endl;
+        std::cerr << err.what() << '\n';
         std::cerr << parser;
         return 1;
     }

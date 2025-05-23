@@ -4,7 +4,7 @@
 #include <Stream.h>
 #include <Util.h>
 
-enum class Type
+enum class Type : uint8_t
 {
     i32 = 0x7F,
     i64 = 0x7E,

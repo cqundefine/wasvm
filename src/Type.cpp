@@ -8,15 +8,15 @@
 
 Type read_type_from_stream(Stream& stream)
 {
-    Type t = static_cast<Type>(stream.read_leb<uint32_t>());
-    if (!is_valid_type(t))
+    Type type = static_cast<Type>(stream.read_leb<uint32_t>());
+    if (!is_valid_type(type))
         throw WasmFile::InvalidWASMException();
-    return t;
+    return type;
 }
 
-bool is_valid_type(Type t)
+bool is_valid_type(Type type)
 {
-    return t == Type::i32 || t == Type::i64 || t == Type::f32 || t == Type::f64 || t == Type::v128 || t == Type::funcref || t == Type::externref;
+    return type == Type::i32 || type == Type::i64 || type == Type::f32 || type == Type::f64 || type == Type::v128 || type == Type::funcref || type == Type::externref;
 }
 
 Value default_value_for_type(Type type)

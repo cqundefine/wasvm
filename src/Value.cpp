@@ -50,27 +50,3 @@ bool Value::operator==(const Value& other) const
 
     UNREACHABLE();
 }
-
-Value::Type value_type_from_type(Type type)
-{
-    switch (type)
-    {
-        case Type::i32:
-            return Value::Type::UInt32;
-        case Type::i64:
-            return Value::Type::UInt64;
-        case Type::f32:
-            return Value::Type::Float;
-        case Type::f64:
-            return Value::Type::Double;
-        case Type::v128:
-            return Value::Type::UInt128;
-        case Type::funcref:
-        case Type::externref:
-            return Value::Type::Reference;
-        default:
-            assert(false);
-    }
-
-    std::unreachable();
-}

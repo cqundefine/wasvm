@@ -23,7 +23,7 @@ public:
         uint32_t ip = 0;
         Ref<Module> mod;
 
-        inline Frame(Ref<Module> mod)
+        Frame(Ref<Module> mod)
         {
             this->mod = mod;
         }

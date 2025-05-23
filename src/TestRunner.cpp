@@ -62,7 +62,7 @@ struct CanonicalNaN
     }
 };
 
-uint128_t getLane(uint128_t vector, uint8_t laneSize, uint8_t lane)
+static uint128_t getLane(uint128_t vector, uint8_t laneSize, uint8_t lane)
 {
     switch (laneSize)
     {
@@ -292,10 +292,8 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string&
                 std::println("{}/{} skipped: failed to parse argument of type: {}", path, line, arg["type"].get<std::string>());
                 break;
             }
-            else
-            {
-                args.push_back(value.value().get_value());
-            }
+
+            args.push_back(value.value().get_value());
         }
 
         if (failed)
