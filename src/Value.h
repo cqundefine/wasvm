@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Util.h"
 #include <SIMD.h>
 #include <Type.h>
+#include <Util.h>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>

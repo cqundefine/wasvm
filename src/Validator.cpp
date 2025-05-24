@@ -81,14 +81,9 @@ struct ValidatorLabel
     Label label;
 };
 
-class ValidatorStack
+class ValidatorStack : private Stack<ValidatorType>
 {
 public:
-    void push(ValidatorType type)
-    {
-        m_stack.push_back(type);
-    }
-
     ValidatorType pop()
     {
         if (m_stack.size() == last_label().stackHeight && last_label().unreachable)
@@ -107,15 +102,9 @@ public:
         return actual;
     }
 
-    void erase(uint32_t fromBegin, uint32_t fromEnd)
-    {
-        m_stack.erase(m_stack.begin() + fromBegin, m_stack.end() - fromEnd);
-    }
-
-    uint32_t size() const
-    {
-        return static_cast<uint32_t>(m_stack.size());
-    }
+    using Stack::erase;
+    using Stack::push;
+    using Stack::size;
 
     void push_label(const ValidatorLabel& label)
     {
@@ -141,7 +130,6 @@ public:
     }
 
 private:
-    std::vector<ValidatorType> m_stack;
     std::vector<ValidatorLabel> m_labels;
 };
 

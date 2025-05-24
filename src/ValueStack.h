@@ -1,38 +1,14 @@
 #pragma once
 
+#include <Stack.h>
 #include <Type.h>
 #include <Value.h>
 #include <iostream>
 #include <span>
 
-class ValueStack
+class ValueStack : public Stack<Value>
 {
 public:
-    void push(Value value)
-    {
-        m_stack.push_back(value);
-    }
-
-    void push_values(std::span<Value> values)
-    {
-        for (const auto& value : values)
-            push(value);
-    }
-
-    Value pop()
-    {
-#ifdef DEBUG_BUILD
-        if (size() == 0)
-        {
-            std::println(std::cerr, "Error: Tried to pop from an empty stack");
-            throw Trap();
-        }
-#endif
-        Value value = m_stack.back();
-        m_stack.pop_back();
-        return value;
-    }
-
     template <IsValueType T>
     T pop_as()
     {
@@ -46,37 +22,4 @@ public:
 #endif
         return std::bit_cast<T>(value.get<ToValueType<T>>());
     }
-
-    std::vector<Value> pop_n_values(uint32_t n)
-    {
-        std::vector<Value> values;
-        for (uint32_t i = 0; i < n; i++)
-            values.push_back(pop());
-
-        std::reverse(values.begin(), values.end());
-        return std::move(values);
-    }
-
-    Value peek()
-    {
-        return m_stack.back();
-    }
-
-    void erase(uint32_t fromBegin, uint32_t fromEnd)
-    {
-        m_stack.erase(m_stack.begin() + fromBegin, m_stack.end() - fromEnd);
-    }
-
-    uint32_t size() const
-    {
-        return static_cast<uint32_t>(m_stack.size());
-    }
-
-    void clear()
-    {
-        m_stack.clear();
-    }
-
-private:
-    std::vector<Value> m_stack;
 };

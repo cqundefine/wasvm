@@ -9,6 +9,7 @@
 #include <WasmFile.h>
 #include <map>
 #include <stack>
+#include <unordered_map>
 
 constexpr uint32_t WASM_PAGE_SIZE = 65536;
 constexpr uint32_t MAX_FRAME_STACK_SIZE = 1024;
@@ -79,5 +80,5 @@ private:
     static inline Frame* m_frame;
     static inline std::stack<Frame*> m_frame_stack;
     static inline Ref<Module> m_current_module;
-    static inline std::map<std::string, Ref<Module>> m_registered_modules;
+    static inline std::unordered_map<std::string, Ref<Module>> m_registered_modules;
 };

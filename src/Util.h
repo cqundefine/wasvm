@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <sys/time.h>
 #include <type_traits>
