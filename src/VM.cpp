@@ -12,7 +12,7 @@
 
 Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 {
-    auto new_module = MakeRef<Module>();
+    auto new_module = MakeRef<Module>(m_next_module_id++);
     new_module->wasmFile = file;
 
     for (const auto& import : new_module->wasmFile->imports)

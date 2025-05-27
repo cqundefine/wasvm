@@ -47,6 +47,9 @@ class Module
 public:
     Ref<WasmFile::WasmFile> wasmFile;
     std::vector<Ref<Function>> functions;
+    size_t id;
+
+    Module(size_t id);
 
     // FIXME: Do these actually need a function, because the validator guarantees us correctness
     void add_table(Ref<Table> table);

@@ -79,6 +79,7 @@ private:
 
     static inline Frame* m_frame;
     static inline std::stack<Frame*> m_frame_stack;
+    static inline size_t m_next_module_id = 0;
     static inline Ref<Module> m_current_module;
     static inline std::unordered_map<std::string, Ref<Module>> m_registered_modules;
 };

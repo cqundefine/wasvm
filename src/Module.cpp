@@ -22,6 +22,11 @@ Global::Global(Type type, WasmFile::GlobalMutability mut, Value value)
 {
 }
 
+Module::Module(size_t id)
+    : id(id)
+{
+}
+
 void Module::add_table(Ref<Table> table)
 {
     tables.push_back(table);
