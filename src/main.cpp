@@ -81,8 +81,15 @@ int main(int argc, char** argv)
 
         VM::load_module(file);
 
-        std::vector<Value> returnValues = VM::run_function(parser.get("-f"), {});
-        for (const auto value : returnValues)
-            std::println("{}", value);
+        try
+        {
+            std::vector<Value> returnValues = VM::run_function(parser.get("-f"), {});
+            for (const auto value : returnValues)
+                std::println("{}", value);
+        }
+        catch (const Trap& trap)
+        {
+            std::println("Trapped");
+        }
     }
 }
