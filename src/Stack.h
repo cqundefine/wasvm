@@ -3,7 +3,7 @@
 #include <Util.h>
 #include <Value.h>
 
-template <typename T>
+template <typename T, typename Exception = Trap>
 class Stack
 {
 public:
@@ -24,7 +24,7 @@ public:
         if (size() == 0)
         {
             std::println(std::cerr, "Error: Tried to pop from an empty stack");
-            throw Trap();
+            throw Exception();
         }
 #endif
         T value = m_stack.back();
