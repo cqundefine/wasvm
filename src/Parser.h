@@ -6,6 +6,7 @@
 #include <Value.h>
 #include <WasmFile.h>
 #include <optional>
+#include <print>
 #include <variant>
 #include <vector>
 
@@ -82,12 +83,26 @@ struct Instruction
     template <typename T>
     T& get_arguments()
     {
+#ifdef DEBUG_BUILD
+        if (!std::holds_alternative<T>(arguments))
+        {
+            std::println(std::cerr, "Tried to get an invalid type of arguments");
+            exit(1);
+        }
+#endif
         return std::get<T>(arguments);
     }
 
     template <typename T>
     const T& get_arguments() const
     {
+#ifdef DEBUG_BUILD
+        if (!std::holds_alternative<T>(arguments))
+        {
+            std::println(std::cerr, "Tried to get an invalid type of arguments");
+            exit(1);
+        }
+#endif
         return std::get<T>(arguments);
     }
 };
