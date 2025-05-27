@@ -47,6 +47,18 @@ public:
         return m_stack.back();
     }
 
+    T get_from_end(uint32_t index)
+    {
+#ifdef DEBUG_BUILD
+        if (index + 1 > size())
+        {
+            std::println(std::cerr, "Error: Tried to pop from an empty stack");
+            throw Exception();
+        }
+#endif
+        return m_stack[size() - index - 1];
+    }
+
     void erase(uint32_t fromBegin, uint32_t fromEnd)
     {
         m_stack.erase(m_stack.begin() + fromBegin, m_stack.end() - fromEnd);
