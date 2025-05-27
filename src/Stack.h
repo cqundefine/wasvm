@@ -42,7 +42,12 @@ public:
         return std::move(values);
     }
 
-    T peek()
+    const T& peek() const
+    {
+        return m_stack.back();
+    }
+
+    T& peek()
     {
         return m_stack.back();
     }
