@@ -1,15 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_COLOR_DIAGNOSTICS ON)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
 project(WASVM)
 
-add_compile_options(-fdiagnostics-color=always)
-
-add_compile_options(-Wimplicit-fallthrough -Wswitch-default -Wno-user-defined-literals -Wno-explicit-specialization-storage-class)
+add_compile_options(-Wimplicit-fallthrough -Wno-user-defined-literals -Wno-explicit-specialization-storage-class -Wno-deprecated-declarations)
 add_link_options(-static-libgcc -static-libstdc++)
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
