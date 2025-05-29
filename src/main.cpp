@@ -76,6 +76,13 @@ int main(int argc, char** argv)
     }
     else
     {
+        if (parser["--load-test-module"] == true)
+        {
+            FileStream test("spectest.wasm");
+            auto testModule = VM::load_module(WasmFile::WasmFile::read_from_stream(test), true);
+            VM::register_module("spectest", testModule);
+        }
+
         FileStream fileStream(parser.get("path"));
         auto file = WasmFile::WasmFile::read_from_stream(fileStream, parser["-n"] == false);
 
