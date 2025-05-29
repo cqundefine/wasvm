@@ -42,9 +42,6 @@ public:
     static Ref<Module> get_registered_module(const std::string& name);
 
     static Ref<Module> current_module() { return m_current_module; }
-    static uint8_t* memory() { return m_current_module->get_memory(0)->data; } // FIXME: Remove this after rewriting WASI
-
-    static Frame* frame() { return m_frame; }
 
 private:
     static Value run_bare_code(Ref<Module> mod, const std::vector<Instruction>& instructions);
