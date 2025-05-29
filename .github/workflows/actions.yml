@@ -24,6 +24,11 @@ jobs:
           cd build
           cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-21 -DCMAKE_CXX_COMPILER=clang++-21
           ninja
+      - name: cache wabt
+        uses: actions/cache@v4
+        with:
+          path: test_data/wabt
+          key: wabt-${{ runner.os }}-${{ matrix.arch }}
       - name: prepare tests
         run: |
           ./make_tests.py
