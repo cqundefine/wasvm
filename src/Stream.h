@@ -13,12 +13,6 @@ class Stream;
 template <typename T>
 concept IsStreamReadable = requires(Stream& stream) { { T::read_from_stream(stream) } -> std::same_as<T>; };
 
-template <typename T>
-concept IsUnsignedIntegral = std::is_integral_v<T> && std::is_unsigned_v<T>;
-
-template <typename T>
-concept IsSignedIntegral = std::is_integral_v<T> && std::is_signed_v<T>;
-
 struct StreamReadException : public std::exception
 {
     const char* what() const throw()
@@ -72,7 +66,7 @@ public:
     }
 
     // FIXME: Make this take the actual size of the varuint
-    template <IsUnsignedIntegral T, uint8_t bits>
+    template <std::unsigned_integral T, uint8_t bits>
     T read_leb()
     {
         T value = 0;
@@ -100,13 +94,13 @@ public:
         return value;
     }
 
-    template <IsUnsignedIntegral T>
+    template <std::unsigned_integral T>
     T read_leb()
     {
         return read_leb<T, sizeof(T) * 8>();
     }
 
-    template <IsSignedIntegral T, uint8_t bits>
+    template <std::signed_integral T, uint8_t bits>
     T read_leb()
     {
         std::make_unsigned_t<T> value = 0;

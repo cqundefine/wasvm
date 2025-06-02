@@ -539,7 +539,7 @@ TestStats run_tests(const std::string& path)
                 auto file = WasmFile::WasmFile::read_from_stream(fileStream);
 
                 stats.failed++;
-                std::println("{}/{} expected to not load, loaded", path, line);
+                std::println("{}/{} failed: expected to not load, loaded", path, line);
             }
             catch (WasmFile::InvalidWASMException e)
             {
@@ -564,7 +564,7 @@ TestStats run_tests(const std::string& path)
                 VM::load_module(file, true);
 
                 stats.failed++;
-                std::println("{}/{} expected to not instantiate, instantiated", path, line);
+                std::println("{}/{} failed: expected to not instantiate, instantiated", path, line);
             }
             catch (WasmFile::InvalidWASMException e)
             {

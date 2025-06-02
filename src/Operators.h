@@ -6,6 +6,7 @@
 #include <bit>
 #include <cassert>
 #include <cmath>
+#include <concepts>
 #include <type_traits>
 
 #define GENERIC_BINARY_OPERATION_OPERATOR(name, op)         \
@@ -62,11 +63,9 @@ GENERIC_BINARY_OPERATION_FUNCTION(vector_avgr, vector_avgr);
 GENERIC_BINARY_OPERATION_FUNCTION(vector_add_sat, vector_add_sat);
 GENERIC_BINARY_OPERATION_FUNCTION(vector_sub_sat, vector_sub_sat);
 
-template <typename LhsType, typename RhsType>
+template <std::floating_point LhsType, std::floating_point RhsType>
 constexpr Value operation_min(LhsType a, RhsType b)
 {
-    static_assert(std::is_floating_point<LhsType>() && std::is_floating_point<RhsType>(), "Opeartion min only supports floating point");
-
     if (std::isnan(a))
         return typed_nan<ToValueType<LhsType>>();
 
@@ -76,11 +75,9 @@ constexpr Value operation_min(LhsType a, RhsType b)
     return (ToValueType<LhsType>)std::min(a, b);
 }
 
-template <typename LhsType, typename RhsType>
+template <std::floating_point LhsType, std::floating_point RhsType>
 constexpr Value operation_max(LhsType a, RhsType b)
 {
-    static_assert(std::is_floating_point<LhsType>() && std::is_floating_point<RhsType>(), "Opeartion max only supports floating point");
-
     if (std::isnan(a))
         return typed_nan<ToValueType<LhsType>>();
 
@@ -96,7 +93,7 @@ constexpr Value operation_div(LhsType a, RhsType b)
     if constexpr (std::is_integral<LhsType>())
     {
         if constexpr (std::is_signed<LhsType>())
-            if (a == ((ToValueType<LhsType>)1 << (sizeof(LhsType) * 8 - 1)) && b == -1)
+            if (a == (static_cast<ToValueType<LhsType>>(1) << (sizeof(LhsType) * 8 - 1)) && b == -1)
                 throw Trap();
 
         if (b == 0)
@@ -111,12 +108,12 @@ constexpr Value operation_rem(LhsType a, RhsType b)
 {
     if constexpr (std::is_signed<LhsType>())
         if (b == -1)
-            return (ToValueType<LhsType>)0;
+            return static_cast<ToValueType<LhsType>>(0);
 
     if (b == 0)
         throw Trap();
 
-    return (ToValueType<LhsType>)(a % b);
+    return static_cast<ToValueType<LhsType>>(a % b);
 }
 
 template <typename LhsType, typename RhsType>
@@ -228,54 +225,57 @@ constexpr Value operation_eqz(T a)
 {
     return static_cast<uint32_t>(a == 0);
 }
+
 template <typename T>
 constexpr Value operation_any_true(T a)
 {
     return static_cast<uint32_t>(a != 0);
 }
 
-template <typename TruncatedType, typename T>
+template <std::integral TruncatedType, std::floating_point T>
 constexpr Value operation_trunc(T a)
 {
-    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "operation_trunc is meant for floating point to integer conversions");
-
     if (std::isnan(a) || std::isinf(a))
         throw Trap();
 
     a = std::trunc(a);
 
-    if (a < (std::is_signed<TruncatedType>() ? (-1 * std::pow(2.0, (sizeof(TruncatedType) * 8 - 1))) : 0))
+    constexpr auto minimum = static_cast<long double>(std::numeric_limits<TruncatedType>::min());
+    constexpr auto maximum = static_cast<long double>(std::numeric_limits<TruncatedType>::max());
+
+    if (static_cast<long double>(a) < minimum)
         throw Trap();
 
-    if (a > std::pow(2.0, (sizeof(TruncatedType) * 8 - std::is_signed<TruncatedType>())) - 1)
+    if (static_cast<long double>(a) > maximum)
         throw Trap();
 
-    return (ToValueType<TruncatedType>)(TruncatedType)a;
+    return static_cast<ToValueType<TruncatedType>>(static_cast<TruncatedType>(a));
 }
 
-template <typename TruncatedType, typename T>
+template <std::integral TruncatedType, std::floating_point T>
 constexpr Value operation_trunc_sat(T a)
 {
-    static_assert(std::is_floating_point<T>() && std::is_integral<TruncatedType>(), "operation_trunc_sat is meant for floating point to integer conversions");
-
     if (std::isnan(a))
-        return (ToValueType<TruncatedType>)0;
+        return static_cast<ToValueType<TruncatedType>>(0);
 
     if (std::isinf(a) && a < 0)
-        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().min();
+        return static_cast<ToValueType<TruncatedType>>(std::numeric_limits<TruncatedType>::min());
 
     if (std::isinf(a) && a > 0)
-        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().max();
+        return static_cast<ToValueType<TruncatedType>>(std::numeric_limits<TruncatedType>::max());
 
     a = std::trunc(a);
 
-    if (a < (std::is_signed<TruncatedType>() ? (-1 * std::pow(2.0, (sizeof(TruncatedType) * 8 - 1))) : 0))
-        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().min();
+    constexpr auto minimum = static_cast<long double>(std::numeric_limits<TruncatedType>::min());
+    constexpr auto maximum = static_cast<long double>(std::numeric_limits<TruncatedType>::max());
 
-    if (a > std::pow(2.0, (sizeof(TruncatedType) * 8 - std::is_signed<TruncatedType>())) - 1)
-        return (ToValueType<TruncatedType>)std::numeric_limits<TruncatedType>().max();
+    if (static_cast<long double>(a) < minimum)
+        return static_cast<ToValueType<TruncatedType>>(std::numeric_limits<TruncatedType>::min());
 
-    return (ToValueType<TruncatedType>)(TruncatedType)a;
+    if (static_cast<long double>(a) > maximum)
+        return static_cast<ToValueType<TruncatedType>>(std::numeric_limits<TruncatedType>::max());
+
+    return static_cast<ToValueType<TruncatedType>>(static_cast<TruncatedType>(a));
 }
 
 template <typename ConvertedType, bool SignedResult, typename T>
@@ -309,10 +309,9 @@ constexpr Value operation_reinterpret(T a)
     return std::bit_cast<ReinterpretedType>(a);
 }
 
-template <typename LowType, typename T>
+template <std::unsigned_integral LowType, std::integral T>
 constexpr Value operation_extend(T a)
 {
-    static_assert(std::is_unsigned<LowType>(), "operation_extend expects low type to be unsigned");
     return static_cast<T>(static_cast<std::make_signed_t<T>>(static_cast<std::make_signed_t<LowType>>(static_cast<LowType>(a))));
 }
 

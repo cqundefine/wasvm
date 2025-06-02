@@ -20,6 +20,7 @@ struct Memory
     std::optional<uint32_t> max;
 
     Memory(const WasmFile::Memory& memory);
+    ~Memory();
 };
 
 struct Table

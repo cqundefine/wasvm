@@ -6,6 +6,7 @@
 #include <Validator.h>
 #include <WasmFile.h>
 #include <iostream>
+#include <type_traits>
 
 namespace WasmFile
 {

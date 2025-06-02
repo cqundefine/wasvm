@@ -1,3 +1,5 @@
+#include "Proposals.h"
+#include "WasmFile.h"
 #include <Parser.h>
 #include <Util.h>
 #include <Value.h>
@@ -114,10 +116,19 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             case global_set:
             case table_get:
             case table_set:
-            case memory_size:
-            case memory_grow:
             case ref_func:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_leb<uint32_t>() });
+                break;
+            case memory_size:
+            case memory_grow:
+                if (g_enable_multi_memory)
+                    instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_leb<uint32_t>() });
+                else
+                {
+                    if (stream.read_little_endian<uint8_t>() != 0)
+                        throw WasmFile::InvalidWASMException();
+                    instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint32_t>(0) });
+                }
                 break;
             case br_table:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = BranchTableArgumentsPrevalidated { .labels = stream.read_vec<uint32_t>(), .defaultLabel = stream.read_leb<uint32_t>() } });

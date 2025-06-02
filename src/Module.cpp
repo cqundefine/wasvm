@@ -10,6 +10,11 @@ Memory::Memory(const WasmFile::Memory& memory)
     memset(data, 0, size * WASM_PAGE_SIZE);
 }
 
+Memory::~Memory()
+{
+    free(data);
+}
+
 Table::Table(Type type)
     : type(type)
 {

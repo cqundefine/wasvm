@@ -4,6 +4,7 @@ import os
 import subprocess
 import platform
 import shutil
+import multiprocessing
 
 TEST_DATA_PATH = "test_data"
 
@@ -58,7 +59,7 @@ if not os.path.exists(WABT_PATH):
         subprocess.run(["mv", WABT_DOWNLOADED_DIR, WABT_PATH])
     else:
         subprocess.run(["git", "clone", WABT_GIT_REPO, WABT_PATH, "--depth=1", "--recursive"])
-        subprocess.run(["make", "-C", WABT_PATH])
+        subprocess.run(["make", "-C", WABT_PATH, f"-j{multiprocessing.cpu_count}"])
 
 if not os.path.exists(TESTSUITE_SOURCE_PATH):
     subprocess.run(["git", "clone", "https://github.com/WebAssembly/testsuite", TESTSUITE_SOURCE_PATH, "--depth=1"])
