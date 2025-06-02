@@ -78,7 +78,7 @@ int main(int argc, char** argv)
     {
         if (parser["--load-test-module"] == true)
         {
-            FileStream test("spectest.wasm");
+            FileStream test("test_data/spectest.wasm");
             auto testModule = VM::load_module(WasmFile::WasmFile::read_from_stream(test), true);
             VM::register_module("spectest", testModule);
         }

@@ -9,7 +9,7 @@ struct Function
 {
     // FIXME: Storing this these as values is a bad idea
     WasmFile::FunctionType type;
-    Ref<Module> mod;
+    Weak<Module> mod;
     WasmFile::Code code;
 };
 

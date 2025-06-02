@@ -61,6 +61,9 @@ constexpr Ref<T> StaticRefCast(const Ref<Base>& base)
     return std::static_pointer_cast<T>(base);
 }
 
+template <typename T>
+using Weak = std::weak_ptr<T>;
+
 template <typename T, typename... U>
 concept IsAnyOf = (std::same_as<T, U> || ...);
 

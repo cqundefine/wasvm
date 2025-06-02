@@ -39,8 +39,10 @@ void Module::add_table(Ref<Table> table)
 
 Ref<Table> Module::get_table(uint32_t index) const
 {
+#ifdef DEBUG_BUILD
     if (index >= tables.size())
         throw Trap();
+#endif
 
     return tables[index];
 }
@@ -52,8 +54,10 @@ void Module::add_memory(Ref<Memory> memory)
 
 Ref<Memory> Module::get_memory(uint32_t index) const
 {
+#ifdef DEBUG_BUILD
     if (index >= memories.size())
         throw Trap();
+#endif
 
     return memories[index];
 }
@@ -65,8 +69,10 @@ void Module::add_global(Ref<Global> global)
 
 Ref<Global> Module::get_global(uint32_t index) const
 {
+#ifdef DEBUG_BUILD
     if (index >= globals.size())
         throw Trap();
+#endif
 
     return globals[index];
 }

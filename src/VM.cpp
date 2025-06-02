@@ -48,8 +48,6 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
                 new_module->add_global(global);
                 break;
             }
-            default:
-                assert(false);
         }
     }
 
@@ -429,7 +427,15 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 if ((uint64_t)source + count > sourceMemory->size * WASM_PAGE_SIZE || (uint64_t)destination + count > destinationMemory->size * WASM_PAGE_SIZE)
                     throw Trap();
 
-                memcpy(sourceMemory->data + destination, destinationMemory->data + source, count);
+                if (count == 0)
+                    break;
+
+                if (destination <= source)
+                    for (uint32_t i = 0; i < count; i++)
+                        destinationMemory->data[destination + i] = sourceMemory->data[source + i];
+                else
+                    for (uint32_t i = count; i > 0; i--)
+                        destinationMemory->data[destination + i - 1] = sourceMemory->data[source + i - 1];
                 break;
             }
             case memory_fill: {
@@ -856,7 +862,7 @@ void VM::call_function(Ref<Function> function)
     std::vector<Value> args = m_frame->stack.pop_n_values(function->type.params.size());
 
     // FIXME: Are we sure the return values are correct
-    std::vector<Value> returnedValues = run_function(function->mod, function, args);
+    std::vector<Value> returnedValues = run_function(function->mod.lock(), function, args);
     for (const auto& returned : returnedValues)
         m_frame->stack.push(returned);
 }
