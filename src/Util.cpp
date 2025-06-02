@@ -1,3 +1,4 @@
+#include <FileStream.h>
 #include <Util.h>
 #include <cassert>
 #include <simdutf/simdutf.h>

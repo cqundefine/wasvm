@@ -147,7 +147,7 @@ public:
     {
 #ifdef DEBUG_BUILD
         if (!holds_alternative<T>())
-            throw std::bad_variant_access();
+            throw Trap();
 #endif
         return *reinterpret_cast<T*>(&m_data);
     }
@@ -158,7 +158,7 @@ public:
     {
 #ifdef DEBUG_BUILD
         if (!holds_alternative<T>())
-            throw std::bad_variant_access();
+            throw Trap();
 #endif
         return *reinterpret_cast<const T*>(&m_data);
     }

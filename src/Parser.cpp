@@ -1,7 +1,6 @@
 #include <Parser.h>
 #include <Util.h>
 #include <Value.h>
-#include <cassert>
 #include <iostream>
 #include <stack>
 
@@ -66,8 +65,9 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 auto begin = blockBeginStack.top();
                 auto& beginInstruction = instructions[begin.begin];
 
-                assert(std::holds_alternative<IfArguments>(beginInstruction.arguments));
-                std::get<IfArguments>(beginInstruction.arguments).elseLocation = instructions.size();
+                if(!std::holds_alternative<IfArguments>(beginInstruction.arguments))
+                    throw WasmFile::InvalidWASMException();
+                beginInstruction.get_arguments<IfArguments>().elseLocation = instructions.size();
 
                 instructions.push_back(Instruction { .opcode = opcode });
                 break;

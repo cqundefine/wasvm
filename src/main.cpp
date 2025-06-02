@@ -83,13 +83,13 @@ int main(int argc, char** argv)
             VM::register_module("spectest", testModule);
         }
 
-        FileStream fileStream(parser.get("path"));
-        auto file = WasmFile::WasmFile::read_from_stream(fileStream, parser["-n"] == false);
-
-        VM::load_module(file);
-
         try
         {
+            FileStream fileStream(parser.get("path"));
+            auto file = WasmFile::WasmFile::read_from_stream(fileStream, parser["-n"] == false);
+
+            VM::load_module(file);
+
             std::vector<Value> returnValues = VM::run_function(parser.get("-f"), {});
             for (const auto value : returnValues)
                 std::println("{}", value);
@@ -97,6 +97,14 @@ int main(int argc, char** argv)
         catch (const Trap& trap)
         {
             std::println("Trapped");
+        }
+        catch (const WasmFile::InvalidWASMException& e)
+        {
+            std::println("Invalid WASM");
+        }
+        catch (...)
+        {
+            std::println("Unknown exception");
         }
     }
 }

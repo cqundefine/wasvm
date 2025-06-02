@@ -2,6 +2,7 @@
 
 #include <Util.h>
 #include <Value.h>
+#include <span>
 
 template <typename T, typename Exception = Trap>
 class Stack
