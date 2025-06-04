@@ -4,6 +4,7 @@
 #include <cmath>
 
 #ifdef ARCH_X86_64
+    #include <immintrin.h>
     #include <smmintrin.h>
 #endif
 
@@ -66,16 +67,15 @@ T vector_broadcast(VectorElement<T> value)
     return result;
 }
 
-#define GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(name, function) \
-    template <typename T, typename U>                              \
-        requires IsVector<T> && IsVector<U>                        \
-    T vector_##name(T a, U b)                                      \
-    {                                                              \
-        static_assert(sizeof(T) == sizeof(U));                     \
-        T result;                                                  \
-        for (size_t i = 0; i < lane_count<T>(); i++)               \
-            result[i] = function(a[i], b[i]);                      \
-        return result;                                             \
+#define GENERIC_VECTOR_BINARY_INSTRUCTION_FUNCTION(name, function)      \
+    template <typename T, typename U>                                   \
+        requires IsVector<T> && IsVector<U> && (sizeof(T) == sizeof(U)) \
+    T vector_##name(T a, U b)                                           \
+    {                                                                   \
+        T result;                                                       \
+        for (size_t i = 0; i < lane_count<T>(); i++)                    \
+            result[i] = function(a[i], b[i]);                           \
+        return result;                                                  \
     }
 
 // FIXME: Use SIMD instructions for these operations
@@ -203,18 +203,33 @@ T vector_sqrt(T a)
 template <IsVector T>
 T vector_avgr(T a, T b)
 {
-    // FIXME: Find a SIMD instruction way to do this
+#ifdef ARCH_X86_64
+    if constexpr (std::is_same<T, uint8x16_t>())
+        return _mm_avg_epu8(a, b);
+    else if constexpr (std::is_same<T, uint16x8_t>())
+        return _mm_avg_epu16(a, b);
+    else
+        static_assert(false, "Unsupported vector for avgr");
+#else
     T result;
     for (size_t i = 0; i < lane_count<T>(); i++)
         result[i] = (a[i] + b[i] + 1) / 2;
     return result;
+#endif
 }
 
 template <IsVector T>
 T vector_popcnt(T a)
 {
+#ifdef ARCH_X86_64_AVX512
+    if constexpr (std::is_same<T, uint8x16_t>())
+        return _mm_popcnt_epi8(a);
+    else
+        static_assert(false, "Unsupported vector for popcnt");
+#else
     T result;
     for (size_t i = 0; i < lane_count<T>(); i++)
         result[i] = std::popcount(a[i]);
     return result;
+#endif
 }

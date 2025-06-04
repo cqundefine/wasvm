@@ -1,46 +1,94 @@
 #pragma once
 
+#include <Parser.h>
 #include <Value.h>
 #include <WasmFile.h>
 
 struct Module;
 
-struct Function
+class Function
 {
-    // FIXME: Storing this these as values is a bad idea
-    WasmFile::FunctionType type;
-    Weak<Module> mod;
-    WasmFile::Code code;
+public:
+    constexpr Function(WasmFile::FunctionType* type, WasmFile::Code* code, Ref<Module> parent)
+        : m_type(type)
+        , m_code(code)
+        , m_parent(parent)
+    {
+    }
+
+    const WasmFile::FunctionType& type() const { return *m_type; }
+    const WasmFile::Code& code() const { return *m_code; }
+    Ref<Module> parent() const { return m_parent.lock(); }
+
+private:
+    WasmFile::FunctionType* m_type;
+    WasmFile::Code* m_code;
+    Weak<Module> m_parent;
 };
 
-struct Memory
+class Memory
 {
-    uint8_t* data;
-    uint32_t size;
-    std::optional<uint32_t> max;
-
+public:
     Memory(const WasmFile::Memory& memory);
     ~Memory();
+
+    WasmFile::Limits limits() const;
+
+    void grow(uint32_t pages);
+
+    uint8_t* data() const { return m_data; }
+    uint32_t size() const { return m_size; }
+    std::optional<uint32_t> max() const { return m_max; }
+
+private:
+    uint8_t* m_data;
+
+    uint32_t m_size;
+    std::optional<uint32_t> m_max;
 };
 
 struct Table
 {
-    Type type;
+public:
+    Table(const WasmFile::Table& table, Reference initialValue);
 
-    std::vector<Reference> elements;
-    std::optional<uint32_t> max;
+    WasmFile::Limits limits() const;
 
-    Table(Type type);
+    void grow(uint32_t elements, Reference value);
+
+    Reference get(uint32_t index) const;
+    void set(uint32_t index, Reference element);
+
+    Reference unsafe_get(uint32_t index) const;
+    void unsafe_set(uint32_t index, Reference element);
+
+    Type type() const { return m_type; }
+    uint32_t size() const { return static_cast<uint32_t>(m_elements.size()); }
+    std::optional<uint32_t> max() const { return m_max; }
+
+private:
+    std::vector<Reference> m_elements;
+
+    Type m_type;
+    std::optional<uint32_t> m_max;
 };
 
 struct Global
 {
-    Type type;
-    WasmFile::GlobalMutability mut;
+public:
+    Global(Type type, WasmFile::GlobalMutability mutability, Value defaultValue);
 
-    Value value;
+    Value get() const { return m_value; }
+    void set(Value value) { m_value = value; }
 
-    Global(Type type, WasmFile::GlobalMutability mut, Value value);
+    Type type() const { return m_type; }
+    WasmFile::GlobalMutability mutability() const { return m_mutability; }
+
+private:
+    Value m_value;
+
+    Type m_type;
+    WasmFile::GlobalMutability m_mutability;
 };
 
 class Module

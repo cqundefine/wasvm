@@ -8,18 +8,18 @@ template <typename T, typename Exception = Trap>
 class Stack
 {
 public:
-    void push(T value)
+    constexpr void push(T value)
     {
         m_stack.push_back(value);
     }
 
-    void push_values(std::span<T> values)
+    constexpr void push_values(std::span<const T> values)
     {
         for (const auto& value : values)
             push(value);
     }
 
-    T pop()
+    constexpr T pop()
     {
 #ifdef DEBUG_BUILD
         if (size() == 0)
@@ -33,9 +33,11 @@ public:
         return value;
     }
 
-    std::vector<T> pop_n_values(uint32_t n)
+    constexpr std::vector<T> pop_n_values(uint32_t n)
     {
         std::vector<T> values;
+        values.reserve(n);
+
         for (uint32_t i = 0; i < n; i++)
             values.push_back(pop());
 
@@ -43,17 +45,17 @@ public:
         return std::move(values);
     }
 
-    const T& peek() const
+    constexpr const T& peek() const
     {
         return m_stack.back();
     }
 
-    T& peek()
+    constexpr T& peek()
     {
         return m_stack.back();
     }
 
-    T get_from_end(uint32_t index)
+    constexpr T get_from_end(uint32_t index)
     {
 #ifdef DEBUG_BUILD
         if (index + 1 > size())
@@ -65,17 +67,17 @@ public:
         return m_stack[size() - index - 1];
     }
 
-    void erase(uint32_t fromBegin, uint32_t fromEnd)
+    constexpr void erase(uint32_t fromBegin, uint32_t fromEnd)
     {
         m_stack.erase(m_stack.begin() + fromBegin, m_stack.end() - fromEnd);
     }
 
-    uint32_t size() const
+    constexpr uint32_t size() const
     {
         return static_cast<uint32_t>(m_stack.size());
     }
 
-    void clear()
+    constexpr void clear()
     {
         m_stack.clear();
     }

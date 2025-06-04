@@ -1,5 +1,6 @@
 #include <Opcode.h>
 #include <Operators.h>
+#include <Parser.h>
 #include <SIMD.h>
 #include <Type.h>
 #include <Util.h>
@@ -22,28 +23,28 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
         {
             case WasmFile::ImportType::Function: {
                 const auto function = location.module->functions[location.index];
-                if (function->type != file->functionTypes[import.functionTypeIndex])
+                if (function->type() != file->functionTypes[import.functionTypeIndex])
                     throw Trap();
                 new_module->functions.push_back(function);
                 break;
             }
             case WasmFile::ImportType::Table: {
                 const auto table = location.module->get_table(location.index);
-                if (table->type != import.tableRefType || !WasmFile::Limits(table->elements.size(), table->max).fits_within(import.tableLimits))
+                if (table->type() != import.tableRefType || !table->limits().fits_within(import.tableLimits))
                     throw Trap();
                 new_module->add_table(table);
                 break;
             }
             case WasmFile::ImportType::Memory: {
                 const auto memory = location.module->get_memory(location.index);
-                if (!WasmFile::Limits(memory->size, memory->max).fits_within(import.memoryLimits))
+                if (!memory->limits().fits_within(import.memoryLimits))
                     throw Trap();
                 new_module->add_memory(memory);
                 break;
             }
             case WasmFile::ImportType::Global: {
                 const auto global = location.module->get_global(location.index);
-                if (global->type != import.globalType || global->mut != import.globalMut)
+                if (global->type() != import.globalType || global->mutability() != import.globalMutability)
                     throw Trap();
                 new_module->add_global(global);
                 break;
@@ -53,28 +54,20 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
 
     for (size_t i = 0; i < new_module->wasmFile->functionTypeIndexes.size(); i++)
     {
-        auto function = MakeRef<Function>();
-        function->type = new_module->wasmFile->functionTypes[new_module->wasmFile->functionTypeIndexes[i]];
-        function->mod = new_module;
-        function->code = new_module->wasmFile->codeBlocks[i];
+        auto* type = &new_module->wasmFile->functionTypes[new_module->wasmFile->functionTypeIndexes[i]];
+        auto* code = &new_module->wasmFile->codeBlocks[i];
+        auto function = MakeRef<Function>(type, code, new_module);
         new_module->functions.push_back(function);
     }
 
     for (const auto& global : new_module->wasmFile->globals)
-        new_module->add_global(MakeRef<Global>(global.type, global.mut, run_bare_code(new_module, global.initCode)));
+        new_module->add_global(MakeRef<Global>(global.type, global.mutability, run_bare_code(new_module, global.initCode)));
 
     for (const auto& memory : new_module->wasmFile->memories)
         new_module->add_memory(MakeRef<Memory>(memory));
 
     for (const auto& tableInfo : new_module->wasmFile->tables)
-    {
-        auto table = MakeRef<Table>(tableInfo.refType);
-        table->max = tableInfo.limits.max;
-        table->elements.reserve(tableInfo.limits.min);
-        for (uint32_t i = 0; i < tableInfo.limits.min; i++)
-            table->elements.push_back(Reference { get_reference_type_from_reftype(tableInfo.refType), UINT32_MAX, new_module.get() });
-        new_module->add_table(table);
-    }
+        new_module->add_table(MakeRef<Table>(tableInfo, Reference { get_reference_type_from_reftype(tableInfo.refType), {}, new_module.get() }));
 
     for (auto& element : new_module->wasmFile->elements)
     {
@@ -84,9 +77,11 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
             assert(beginValue.holds_alternative<uint32_t>());
             uint32_t begin = beginValue.get<uint32_t>();
 
+            const auto table = new_module->get_table(element.table);
+
             size_t size = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
 
-            if (begin + size > new_module->get_table(element.table)->elements.size())
+            if (begin + size > table->size())
                 throw Trap();
 
             for (size_t i = 0; i < size; i++)
@@ -95,22 +90,17 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
                 {
                     Value reference = run_bare_code(new_module, element.referencesExpr[i]);
                     assert(reference.holds_alternative<Reference>());
-                    new_module->get_table(element.table)->elements[begin + i] = reference.get<Reference>();
+                    table->set(begin + i, reference.get<Reference>());
                 }
                 else
                 {
-                    new_module->get_table(element.table)->elements[begin + i] = Reference { ReferenceType::Function, element.functionIndexes[i], new_module.get() };
+                    table->set(begin + i, Reference { ReferenceType::Function, element.functionIndexes[i], new_module.get() });
                 }
             }
         }
 
         if (element.mode == WasmFile::ElementMode::Active || element.mode == WasmFile::ElementMode::Declarative)
-        {
-            element.table = UINT32_MAX;
-            element.expr.clear();
-            element.functionIndexes.clear();
-            element.referencesExpr.clear();
-        }
+            element = WasmFile::Element();
     }
 
     for (auto& data : new_module->wasmFile->dataBlocks)
@@ -121,16 +111,14 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
             assert(beginValue.holds_alternative<uint32_t>());
             uint32_t begin = beginValue.get<uint32_t>();
 
-            auto memory = new_module->get_memory(data.memoryIndex);
+            const auto memory = new_module->get_memory(data.memoryIndex);
 
-            if (begin + data.data.size() > memory->size * WASM_PAGE_SIZE)
+            if (begin + data.data.size() > memory->size() * WASM_PAGE_SIZE)
                 throw Trap();
 
-            memcpy(memory->data + begin, data.data.data(), data.data.size());
+            memcpy(memory->data() + begin, data.data.data(), data.data.size());
 
-            data.type = UINT32_MAX;
-            data.expr.clear();
-            data.data.clear();
+            data = WasmFile::Data();
         }
     }
 
@@ -148,29 +136,29 @@ void VM::register_module(const std::string& name, Ref<Module> module)
     m_registered_modules[name] = module;
 }
 
-std::vector<Value> VM::run_function(const std::string& name, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(const std::string& name, std::span<const Value> args)
 {
     return run_function(m_current_module, name, args);
 }
 
-std::vector<Value> VM::run_function(const std::string& mod, const std::string& name, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(const std::string& mod, const std::string& name, std::span<const Value> args)
 {
     return run_function(m_registered_modules[mod], name, args);
 }
 
-std::vector<Value> VM::run_function(Ref<Module> mod, const std::string& name, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(Ref<Module> mod, const std::string& name, std::span<const Value> args)
 {
     WasmFile::Export functionExport = mod->wasmFile->find_export_by_name(name);
     assert(functionExport.type == WasmFile::ImportType::Function);
     return run_function(mod, functionExport.index, args);
 }
 
-std::vector<Value> VM::run_function(Ref<Module> mod, uint32_t index, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(Ref<Module> mod, uint32_t index, std::span<const Value> args)
 {
     return run_function(mod, mod->functions[index], args);
 }
 
-std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, const std::vector<Value>& args)
+std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std::span<const Value> args)
 {
     if (m_frame_stack.size() >= MAX_FRAME_STACK_SIZE)
         throw Trap();
@@ -180,18 +168,21 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
     DEFER(clean_up_frame());
 
-    if (args.size() != function->type.params.size())
+    const auto& type = function->type();
+    const auto& code = function->code();
+
+    if (args.size() != type.params.size())
         throw Trap();
 
     for (const auto& param : args)
         m_frame->locals.push_back(param);
 
-    for (const auto local : function->code.locals)
+    for (const auto local : code.locals)
         m_frame->locals.push_back(default_value_for_type(local));
 
-    while (m_frame->ip < function->code.instructions.size())
+    while (m_frame->ip < code.instructions.size())
     {
-        const Instruction& instruction = function->code.instructions[m_frame->ip++];
+        const auto& instruction = code.instructions[m_frame->ip++];
 
         switch (instruction.opcode)
         {
@@ -221,6 +212,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 break;
             case end:
                 break;
+
             case br:
                 branch_to_label(instruction.get_arguments<Label>());
                 break;
@@ -237,8 +229,9 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                     branch_to_label(arguments.defaultLabel);
                 break;
             }
+
             case return_:
-                return std::move(m_frame->stack.pop_n_values(function->type.returns.size()));
+                return std::move(m_frame->stack.pop_n_values(type.returns.size()));
             case call:
                 call_function(mod->functions[instruction.get_arguments<uint32_t>()]);
                 break;
@@ -247,28 +240,25 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 uint32_t index = m_frame->stack.pop_as<uint32_t>();
 
-                auto table = mod->get_table(arguments.tableIndex);
+                const auto table = mod->get_table(arguments.tableIndex);
+                const auto reference = table->get(index);
 
-                if (index >= table->elements.size())
-                    throw Trap();
-
-                Reference reference = table->elements[index];
-
-                if (reference.index == UINT32_MAX)
+                if (!reference.index)
                     throw Trap();
 
                 if (reference.type != ReferenceType::Function)
                     throw Trap();
 
                 auto* module = reference.module ? reference.module : mod.get();
-                auto function = module->functions[reference.index];
+                auto function = module->functions[*reference.index];
 
-                if (function->type != module->wasmFile->functionTypes[arguments.typeIndex])
+                if (function->type() != module->wasmFile->functionTypes[arguments.typeIndex])
                     throw Trap();
 
                 call_function(function);
                 break;
             }
+
             case drop:
                 m_frame->stack.pop();
                 break;
@@ -282,6 +272,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->stack.push(value != 0 ? val1 : val2);
                 break;
             }
+
             case local_get:
                 m_frame->stack.push(m_frame->locals[instruction.get_arguments<uint32_t>()]);
                 break;
@@ -292,26 +283,27 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->locals[instruction.get_arguments<uint32_t>()] = m_frame->stack.peek();
                 break;
             case global_get:
-                m_frame->stack.push(mod->get_global(instruction.get_arguments<uint32_t>())->value);
+                m_frame->stack.push(mod->get_global(instruction.get_arguments<uint32_t>())->get());
                 break;
             case global_set:
-                mod->get_global(instruction.get_arguments<uint32_t>())->value = m_frame->stack.pop();
+                mod->get_global(instruction.get_arguments<uint32_t>())->set(m_frame->stack.pop());
                 break;
+
             case table_get: {
-                uint32_t index = m_frame->stack.pop_as<uint32_t>();
-                auto table = mod->get_table(instruction.get_arguments<uint32_t>());
-                if (index >= table->elements.size())
-                    throw Trap();
-                m_frame->stack.push(table->elements[index]);
+                const auto index = m_frame->stack.pop_as<uint32_t>();
+
+                const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
+
+                m_frame->stack.push(table->get(index));
                 break;
             }
             case table_set: {
-                Reference value = m_frame->stack.pop_as<Reference>();
-                uint32_t index = m_frame->stack.pop_as<uint32_t>();
-                auto table = mod->get_table(instruction.get_arguments<uint32_t>());
-                if (index >= table->elements.size())
-                    throw Trap();
-                table->elements[index] = value;
+                const auto value = m_frame->stack.pop_as<Reference>();
+                const auto index = m_frame->stack.pop_as<uint32_t>();
+
+                const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
+
+                table->set(index, value);
                 break;
             }
 
@@ -330,29 +322,24 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 #undef X
 
             case memory_size:
-                m_frame->stack.push(mod->get_memory(instruction.get_arguments<uint32_t>())->size);
+                m_frame->stack.push(mod->get_memory(instruction.get_arguments<uint32_t>())->size());
                 break;
             case memory_grow: {
-                auto memory = mod->get_memory(instruction.get_arguments<uint32_t>());
+                const auto memory = mod->get_memory(instruction.get_arguments<uint32_t>());
 
                 uint32_t addPages = m_frame->stack.pop_as<uint32_t>();
 
-                if (memory->size + addPages > (memory->max ? *memory->max : WasmFile::MAX_WASM_PAGES))
+                if (memory->size() + addPages > (memory->max() ? *memory->max() : WasmFile::MAX_WASM_PAGES))
                 {
                     m_frame->stack.push((uint32_t)-1);
                     break;
                 }
 
-                m_frame->stack.push(memory->size);
-                uint32_t newSize = (memory->size + addPages) * WASM_PAGE_SIZE;
-                uint8_t* newMemory = (uint8_t*)malloc(newSize);
-                memset(newMemory, 0, newSize);
-                memcpy(newMemory, memory->data, std::min(memory->size * WASM_PAGE_SIZE, newSize));
-                free(memory->data);
-                memory->data = newMemory;
-                memory->size += addPages;
+                m_frame->stack.push(memory->size());
+                memory->grow(addPages);
                 break;
             }
+
             case i32_const:
                 m_frame->stack.push(instruction.get_arguments<uint32_t>());
                 break;
@@ -384,47 +371,44 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 m_frame->stack.push(default_value_for_type(instruction.get_arguments<Type>()));
                 break;
             case ref_is_null:
-                m_frame->stack.push((uint32_t)(m_frame->stack.pop_as<Reference>().index == UINT32_MAX));
+                m_frame->stack.push(static_cast<uint32_t>(!m_frame->stack.pop_as<Reference>().index));
                 break;
             case ref_func:
                 m_frame->stack.push(Reference { ReferenceType::Function, instruction.get_arguments<uint32_t>(), mod.get() });
                 break;
+
             case memory_init: {
                 const auto& arguments = instruction.get_arguments<MemoryInitArguments>();
-                auto memory = mod->get_memory(arguments.memoryIndex);
+                const auto memory = mod->get_memory(arguments.memoryIndex);
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                const WasmFile::Data& data = mod->wasmFile->dataBlocks[arguments.dataIndex];
+                const auto& data = mod->wasmFile->dataBlocks[arguments.dataIndex];
 
-                if ((uint64_t)source + count > data.data.size())
+                if (static_cast<uint64_t>(source) + count > data.data.size())
                     throw Trap();
 
-                if ((uint64_t)destination + count > memory->size * WASM_PAGE_SIZE)
+                if (static_cast<uint64_t>(destination) + count > memory->size() * WASM_PAGE_SIZE)
                     throw Trap();
 
-                memcpy(memory->data + destination, data.data.data() + source, count);
+                memcpy(memory->data() + destination, data.data.data() + source, count);
                 break;
             }
-            case data_drop: {
-                WasmFile::Data& data = mod->wasmFile->dataBlocks[instruction.get_arguments<uint32_t>()];
-                data.type = UINT32_MAX;
-                data.expr.clear();
-                data.data.clear();
+            case data_drop:
+                mod->wasmFile->dataBlocks[instruction.get_arguments<uint32_t>()] = WasmFile::Data();
                 break;
-            }
             case memory_copy: {
                 const auto& arguments = instruction.get_arguments<MemoryCopyArguments>();
-                auto sourceMemory = mod->get_memory(arguments.source);
-                auto destinationMemory = mod->get_memory(arguments.destination);
+                const auto& sourceMemory = mod->get_memory(arguments.source);
+                const auto& destinationMemory = mod->get_memory(arguments.destination);
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                if ((uint64_t)source + count > sourceMemory->size * WASM_PAGE_SIZE || (uint64_t)destination + count > destinationMemory->size * WASM_PAGE_SIZE)
+                if (static_cast<uint64_t>(source) + count > sourceMemory->size() * WASM_PAGE_SIZE || static_cast<uint64_t>(destination) + count > destinationMemory->size() * WASM_PAGE_SIZE)
                     throw Trap();
 
                 if (count == 0)
@@ -432,70 +416,66 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
 
                 if (destination <= source)
                     for (uint32_t i = 0; i < count; i++)
-                        destinationMemory->data[destination + i] = sourceMemory->data[source + i];
+                        destinationMemory->data()[destination + i] = sourceMemory->data()[source + i];
                 else
                     for (uint32_t i = count; i > 0; i--)
-                        destinationMemory->data[destination + i - 1] = sourceMemory->data[source + i - 1];
+                        destinationMemory->data()[destination + i - 1] = sourceMemory->data()[source + i - 1];
                 break;
             }
             case memory_fill: {
-                auto memory = mod->get_memory(instruction.get_arguments<uint32_t>());
+                const auto memory = mod->get_memory(instruction.get_arguments<uint32_t>());
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t val = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                if ((uint64_t)destination + count > memory->size * WASM_PAGE_SIZE)
+                if (static_cast<uint64_t>(destination) + count > memory->size() * WASM_PAGE_SIZE)
                     throw Trap();
 
-                memset(memory->data + destination, val, count);
+                memset(memory->data() + destination, val, count);
                 break;
             }
+
             case table_init: {
                 const auto& arguments = instruction.get_arguments<TableInitArguments>();
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                auto table = mod->get_table(arguments.tableIndex);
+                const auto table = mod->get_table(arguments.tableIndex);
 
-                const auto& elem = mod->wasmFile->elements[arguments.elementIndex];
-                size_t elemSize = elem.functionIndexes.empty() ? elem.referencesExpr.size() : elem.functionIndexes.size();
+                const auto& element = mod->wasmFile->elements[arguments.elementIndex];
+                size_t elemSize = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
 
-                if ((uint64_t)source + count > elemSize || (uint64_t)destination + count > table->elements.size())
+                if (static_cast<uint64_t>(source) + count > elemSize || static_cast<uint64_t>(destination) + count > table->size())
                     throw Trap();
 
                 for (uint32_t i = 0; i < count; i++)
                 {
-                    if (elem.functionIndexes.empty())
+                    if (element.functionIndexes.empty())
                     {
-                        Value reference = run_bare_code(mod, elem.referencesExpr[source + i]);
+                        Value reference = run_bare_code(mod, element.referencesExpr[source + i]);
                         assert(reference.holds_alternative<Reference>());
-                        table->elements[destination + i] = reference.get<Reference>();
+                        table->unsafe_set(destination + i, reference.get<Reference>());
                     }
                     else
-                        table->elements[destination + i] = Reference { ReferenceType::Function, elem.functionIndexes[source + i], mod.get() };
+                        table->unsafe_set(destination + i, Reference { ReferenceType::Function, element.functionIndexes[source + i], mod.get() });
                 }
                 break;
             }
-            case elem_drop: {
-                WasmFile::Element& elem = mod->wasmFile->elements[instruction.get_arguments<uint32_t>()];
-                elem.table = UINT32_MAX;
-                elem.expr.clear();
-                elem.functionIndexes.clear();
-                elem.referencesExpr.clear();
+            case elem_drop:
+                mod->wasmFile->elements[instruction.get_arguments<uint32_t>()] = WasmFile::Element();
                 break;
-            }
             case table_copy: {
                 const auto& arguments = instruction.get_arguments<TableCopyArguments>();
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                auto destinationTable = mod->get_table(arguments.destination);
-                auto sourceTable = mod->get_table(arguments.source);
+                const auto destinationTable = mod->get_table(arguments.destination);
+                const auto sourceTable = mod->get_table(arguments.source);
 
-                if ((uint64_t)source + count > sourceTable->elements.size() || (uint64_t)destination + count > destinationTable->elements.size())
+                if (static_cast<uint64_t>(source) + count > sourceTable->size() || static_cast<uint64_t>(destination) + count > destinationTable->size())
                     throw Trap();
 
                 if (count == 0)
@@ -504,55 +484,53 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
                 if (destination <= source)
                 {
                     for (uint32_t i = 0; i < count; i++)
-                        destinationTable->elements[destination + i] = sourceTable->elements[source + i];
+                        destinationTable->unsafe_set(destination + i, sourceTable->unsafe_get(source + i));
                 }
                 else
                 {
                     for (int64_t i = count - 1; i > -1; i--)
-                        destinationTable->elements[destination + i] = sourceTable->elements[source + i];
+                        destinationTable->unsafe_set(destination + i, sourceTable->unsafe_get(source + i));
                 }
                 break;
             }
             case table_grow: {
                 uint32_t addEntries = m_frame->stack.pop_as<uint32_t>();
 
-                auto table = mod->get_table(instruction.get_arguments<uint32_t>());
-                uint32_t oldSize = table->elements.size();
+                const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
+                uint32_t oldSize = table->size();
 
                 Reference value = m_frame->stack.pop_as<Reference>();
 
-                if ((uint64_t)table->elements.size() + addEntries > (table->max ? *table->max : UINT32_MAX))
+                if (static_cast<uint64_t>(table->size()) + addEntries > (table->max() ? *table->max() : UINT32_MAX))
                 {
                     m_frame->stack.push((uint32_t)-1);
                     break;
                 }
 
                 m_frame->stack.push(oldSize);
-
-                assert(addEntries >= 0);
-                for (uint32_t i = 0; i < addEntries; i++)
-                    table->elements.push_back(value);
+                table->grow(addEntries, value);
 
                 break;
             }
             case table_size:
-                m_frame->stack.push((uint32_t)mod->get_table(instruction.get_arguments<uint32_t>())->elements.size());
+                m_frame->stack.push(mod->get_table(instruction.get_arguments<uint32_t>())->size());
                 break;
             case table_fill: {
-                uint32_t count = m_frame->stack.pop_as<uint32_t>();
-                Reference value = m_frame->stack.pop_as<Reference>();
-                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+                auto count = m_frame->stack.pop_as<uint32_t>();
+                auto value = m_frame->stack.pop_as<Reference>();
+                auto destination = m_frame->stack.pop_as<uint32_t>();
 
-                auto table = mod->get_table(instruction.get_arguments<uint32_t>());
+                const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
 
-                if (destination + count > table->elements.size())
+                if (destination + count > table->size())
                     throw Trap();
 
                 for (uint32_t i = 0; i < count; i++)
-                    table->elements[destination + i] = value;
+                    table->unsafe_set(destination + i, value);
 
                 break;
             }
+
             case Opcode::v128_load8_splat:
                 run_load_vector_element_instruction<uint8x16_t, false>(instruction.get_arguments<WasmFile::MemArg>());
                 break;
@@ -693,34 +671,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, con
         }
     }
 
-    std::vector<Value> returnValues;
-    if (function->type.returns.size() > 0)
-    {
-        for (size_t i = function->type.returns.size() - 1; i != (size_t)-1; i--)
-        {
-            auto returnValue = m_frame->stack.pop();
-#ifdef DEBUG_BUILD
-            if (get_value_type(returnValue) != function->type.returns[i])
-            {
-                std::println(std::cerr, "Error: Unxpected return value on the stack: {}, expected {}", get_type_name(get_value_type(returnValue)), get_type_name(function->type.returns[i]));
-                throw Trap();
-            }
-#endif
-            returnValues.push_back(returnValue);
-        }
-
-        std::reverse(returnValues.begin(), returnValues.end());
-    }
-
-#ifdef DEBUG_BUILD
-    if (m_frame->stack.size() != 0)
-    {
-        std::println(std::cerr, "Error: Stack not empty when running function, size is {}", m_frame->stack.size());
-        throw Trap();
-    }
-#endif
-
-    return std::move(returnValues);
+    return std::move(m_frame->stack.pop_n_values(type.returns.size()));
 }
 
 Ref<Module> VM::get_registered_module(const std::string& name)
@@ -728,7 +679,7 @@ Ref<Module> VM::get_registered_module(const std::string& name)
     return m_registered_modules[name];
 }
 
-Value VM::run_bare_code(Ref<Module> mod, const std::vector<Instruction>& instructions)
+Value VM::run_bare_code(Ref<Module> mod, std::span<const Instruction> instructions)
 {
     ValueStack stack;
 
@@ -740,7 +691,7 @@ Value VM::run_bare_code(Ref<Module> mod, const std::vector<Instruction>& instruc
             case end:
                 break;
             case global_get:
-                stack.push(mod->get_global(instruction.get_arguments<uint32_t>())->value);
+                stack.push(mod->get_global(instruction.get_arguments<uint32_t>())->get());
                 break;
             case i32_const:
                 stack.push(instruction.get_arguments<uint32_t>());
@@ -821,15 +772,15 @@ void VM::run_unary_operation()
 template <typename ActualType, typename StackType>
 void VM::run_load_instruction(const WasmFile::MemArg& memArg)
 {
-    auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
 
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
-    if ((uint64_t)address + memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
+    if (static_cast<uint64_t>(address) + memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
         throw Trap();
 
     ActualType value;
-    memcpy(&value, &memory->data[address + memArg.offset], sizeof(ActualType));
+    memcpy(&value, &memory->data()[address + memArg.offset], sizeof(ActualType));
 
     if constexpr (IsVector<ActualType>)
         m_frame->stack.push(std::bit_cast<ToValueType<StackType>>(__builtin_convertvector(value, StackType)));
@@ -840,15 +791,15 @@ void VM::run_load_instruction(const WasmFile::MemArg& memArg)
 template <typename ActualType, typename StackType>
 void VM::run_store_instruction(const WasmFile::MemArg& memArg)
 {
-    auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
 
     ActualType value = (ActualType)m_frame->stack.pop_as<StackType>();
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
-    if ((uint64_t)address + memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
+    if (static_cast<uint64_t>(address) + memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
         throw Trap();
 
-    memcpy(&memory->data[address + memArg.offset], &value, sizeof(ActualType));
+    memcpy(&memory->data()[address + memArg.offset], &value, sizeof(ActualType));
 }
 
 void VM::branch_to_label(Label label)
@@ -859,26 +810,23 @@ void VM::branch_to_label(Label label)
 
 void VM::call_function(Ref<Function> function)
 {
-    std::vector<Value> args = m_frame->stack.pop_n_values(function->type.params.size());
-
-    // FIXME: Are we sure the return values are correct
-    std::vector<Value> returnedValues = run_function(function->mod.lock(), function, args);
-    for (const auto& returned : returnedValues)
-        m_frame->stack.push(returned);
+    const auto args = m_frame->stack.pop_n_values(function->type().params.size());
+    const auto returnedValues = run_function(function->parent(), function, args);
+    m_frame->stack.push_values(returnedValues);
 }
 
 template <IsVector VectorType, bool Zero>
 void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
 {
-    auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
 
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
-    if ((uint64_t)address + memArg.offset + sizeof(VectorElement<VectorType>) > memory->size * WASM_PAGE_SIZE)
+    if (static_cast<uint64_t>(address) + memArg.offset + sizeof(VectorElement<VectorType>) > memory->size() * WASM_PAGE_SIZE)
         throw Trap();
 
     VectorElement<VectorType> value {};
-    memcpy(&value, &memory->data[address + memArg.offset], sizeof(VectorElement<VectorType>));
+    memcpy(&value, &memory->data()[address + memArg.offset], sizeof(VectorElement<VectorType>));
 
     if constexpr (Zero)
     {
@@ -893,16 +841,16 @@ void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
 template <IsVector VectorType, typename ActualType, typename LaneType>
 void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
 {
-    auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+    const auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
 
     VectorType vector = m_frame->stack.pop_as<VectorType>();
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
-    if ((uint64_t)address + args.memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
+    if (static_cast<uint64_t>(address) + args.memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
         throw Trap();
 
     ActualType value;
-    memcpy(&value, &memory->data[address + args.memArg.offset], sizeof(ActualType));
+    memcpy(&value, &memory->data()[address + args.memArg.offset], sizeof(ActualType));
 
     vector[args.lane] = (LaneType)value;
     m_frame->stack.push(vector);
@@ -911,16 +859,16 @@ void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
 template <IsVector VectorType, typename ActualType, typename StackType>
 void VM::run_store_lane_instruction(const LoadStoreLaneArguments& args)
 {
-    auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+    const auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
 
     VectorType vector = m_frame->stack.pop_as<VectorType>();
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
-    if ((uint64_t)address + args.memArg.offset + sizeof(ActualType) > memory->size * WASM_PAGE_SIZE)
+    if (static_cast<uint64_t>(address) + args.memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
         throw Trap();
 
     ActualType value = vector[args.lane];
-    memcpy(&memory->data[address + args.memArg.offset], &value, sizeof(ActualType));
+    memcpy(&memory->data()[address + args.memArg.offset], &value, sizeof(ActualType));
 }
 
 VM::ImportLocation VM::find_import(const std::string& environment, const std::string& name, WasmFile::ImportType importType)

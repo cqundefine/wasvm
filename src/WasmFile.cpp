@@ -113,7 +113,7 @@ namespace WasmFile
                     .environment = environment,
                     .name = name,
                     .globalType = type,
-                    .globalMut = mut,
+                    .globalMutability = mut,
                 };
             }
             default:
@@ -147,7 +147,7 @@ namespace WasmFile
 
         return Global {
             .type = type,
-            .mut = mut,
+            .mutability = mut,
             .initCode = parse(stream, s_currentWasmFile),
         };
     }

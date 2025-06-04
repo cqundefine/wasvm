@@ -31,17 +31,11 @@ class Module;
 struct Reference
 {
     ReferenceType type;
-    uint32_t index;
+    std::optional<uint32_t> index;
     Module* module;
-
-    constexpr Reference(ReferenceType type, uint32_t index, Module* module)
-        : type(type)
-        , index(index)
-        , module(module)
-    {
-    }
 };
 
+#ifdef DEBUG_BUILD
 template <typename T>
 inline constexpr const char* value_type_name = []() {
     static_assert(false);
@@ -64,6 +58,7 @@ inline constexpr const char* value_type_name<uint128_t> = "v128";
 
 template <>
 inline constexpr const char* value_type_name<Reference> = "funcref / externref";
+#endif
 
 template <typename T, typename = void>
 struct ToValueTypeHelper
@@ -72,10 +67,12 @@ struct ToValueTypeHelper
 };
 
 template <typename T>
-struct ToValueTypeHelper<T, std::enable_if_t<std::is_integral_v<T> && sizeof(T) <= 8>>
+struct ToValueTypeHelper<T, std::enable_if_t<std::is_integral_v<T>>>
 {
     using type = std::make_unsigned_t<T>;
 };
+
+static_assert(!std::is_integral_v<int64x2_t>);
 
 template <typename T>
     requires IsVector<T>
@@ -102,25 +99,12 @@ class Value
     friend class ValueStack;
 
 public:
-    // Enum class for types
-    enum class Type
-    {
-        UInt32,
-        UInt64,
-        Float,
-        Double,
-        UInt128,
-        Reference
-    };
-
-    // Default constructor
     constexpr Value()
         : m_type(Type::UInt32)
     {
-        new (&m_data) uint32_t(0); // Initialize with default value
+        new (&m_data) uint32_t(0);
     }
 
-    // Constructor that uses the IsValueType concept
     template <IsValueType T>
     constexpr Value(const T& value)
         : m_type(get_type_for<ToValueType<T>>())
@@ -128,20 +112,17 @@ public:
         new (&m_data) ToValueType<T>((ToValueType<T>)value);
     }
 
-    // Default copy and move constructors/assignments
-    Value(const Value&) = default;
-    Value(Value&&) noexcept = default;
-    Value& operator=(const Value&) = default;
-    Value& operator=(Value&&) noexcept = default;
+    constexpr Value(const Value&) = default;
+    constexpr Value(Value&&) noexcept = default;
+    constexpr Value& operator=(const Value&) = default;
+    constexpr Value& operator=(Value&&) noexcept = default;
 
-    // Templated check if the variant holds a specific type
     template <IsValueType T>
     constexpr bool holds_alternative() const
     {
         return m_type == get_type_for<T>();
     }
 
-    // Access the stored value as a reference (throws if type doesn't match)
     template <IsValueType T>
     constexpr T& get()
     {
@@ -149,10 +130,9 @@ public:
         if (!holds_alternative<T>())
             throw Trap();
 #endif
-        return *reinterpret_cast<T*>(&m_data);
+        return *std::bit_cast<T*>(&m_data);
     }
 
-    // Access the stored value as a const reference (throws if type doesn't match)
     template <IsValueType T>
     constexpr const T& get() const
     {
@@ -160,16 +140,33 @@ public:
         if (!holds_alternative<T>())
             throw Trap();
 #endif
-        return *reinterpret_cast<const T*>(&m_data);
-    }
-
-    // Get the current type of the value
-    Type get_type() const
-    {
-        return m_type;
+        return *std::bit_cast<const T*>(&m_data);
     }
 
     bool operator==(const Value& other) const;
+
+    constexpr Type get_type() const
+    {
+        if (holds_alternative<uint32_t>())
+            return ::Type::i32;
+        if (holds_alternative<uint64_t>())
+            return ::Type::i64;
+        if (holds_alternative<float>())
+            return ::Type::f32;
+        if (holds_alternative<double>())
+            return ::Type::f64;
+        if (holds_alternative<uint128_t>())
+            return ::Type::v128;
+        if (holds_alternative<Reference>())
+        {
+            if (get<Reference>().type == ReferenceType::Function)
+                return ::Type::funcref;
+            if (get<Reference>().type == ReferenceType::Extern)
+                return ::Type::externref;
+        }
+
+        UNREACHABLE();
+    }
 
 private:
     union Data
@@ -187,9 +184,16 @@ private:
         }
     } m_data;
 
-    Type m_type;
+    enum class Type
+    {
+        UInt32,
+        UInt64,
+        Float,
+        Double,
+        UInt128,
+        Reference
+    } m_type;
 
-    // Helper function to get the Type enum for a specific type
     template <typename T>
     static constexpr Type get_type_for()
     {
@@ -220,7 +224,7 @@ struct std::formatter<Value>
 
     auto format(const Value& obj, std::format_context& ctx) const
     {
-        auto type = get_type_name(get_value_type(obj));
+        auto type = get_type_name(obj.get_type());
         if (obj.holds_alternative<uint32_t>())
             return std::format_to(ctx.out(), "{}({})", type, obj.get<uint32_t>());
         if (obj.holds_alternative<uint64_t>())
@@ -233,11 +237,11 @@ struct std::formatter<Value>
             return std::format_to(ctx.out(), "{}({})", type, obj.get<uint128_t>());
         if (obj.holds_alternative<Reference>())
         {
-            uint32_t index = obj.get<Reference>().index;
-            if (index == UINT32_MAX)
+            const auto reference = obj.get<Reference>();
+            if (reference.index)
                 return std::format_to(ctx.out(), "{}(null)", type);
             else
-                return std::format_to(ctx.out(), "{}({})", type, index);
+                return std::format_to(ctx.out(), "{}({})", type, *reference.index);
         }
 
         UNREACHABLE();

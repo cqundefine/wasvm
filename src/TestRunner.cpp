@@ -264,9 +264,9 @@ std::optional<TestValue> parse_value(nlohmann::json json)
         }
 
         if (type == "funcref")
-            return Reference { ReferenceType::Function, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)), nullptr };
+            return Reference { ReferenceType::Function, value == "null" ? std::optional<uint32_t> {} : static_cast<uint32_t>(std::stoull(value)), nullptr };
         if (type == "externref")
-            return Reference { ReferenceType::Extern, value == "null" ? UINT32_MAX : static_cast<uint32_t>(std::stoull(value)), nullptr };
+            return Reference { ReferenceType::Extern, value == "null" ? std::optional<uint32_t> {} : static_cast<uint32_t>(std::stoull(value)), nullptr };
 
         return {};
     }
@@ -315,7 +315,7 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string&
 
         WasmFile::Export exp = mod->wasmFile->find_export_by_name(action["field"]);
         assert(exp.type == WasmFile::ImportType::Global);
-        return { mod->get_global(exp.index)->value };
+        return { mod->get_global(exp.index)->get() };
     }
     else
     {
@@ -329,6 +329,14 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string&
 TestStats run_tests(const std::string& path)
 {
     TestStats stats {};
+
+    if (path == "linking")
+    {
+        std::println("linking tests are not supported yet");
+        stats.total = 1;
+        stats.failed = 1;
+        return stats;
+    }
 
     try
     {

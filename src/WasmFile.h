@@ -103,7 +103,7 @@ namespace WasmFile
         Limits memoryLimits;
 
         Type globalType;
-        GlobalMutability globalMut;
+        GlobalMutability globalMutability;
 
         static Import read_from_stream(Stream& stream);
     };
@@ -126,7 +126,7 @@ namespace WasmFile
     struct Global
     {
         Type type;
-        GlobalMutability mut;
+        GlobalMutability mutability;
         std::vector<Instruction> initCode;
 
         static Global read_from_stream(Stream& stream);

@@ -31,8 +31,6 @@
     #define DEBUG_BUILD
 #endif
 
-#define OFFSET_OF(class, member) (reinterpret_cast<ptrdiff_t>(&reinterpret_cast<class*>(0x1000)->member) - 0x1000)
-
 #define UNREACHABLE()                                                \
     {                                                                \
         assert(false); /* NOLINT(cert-dcl03-c,misc-static-assert) */ \

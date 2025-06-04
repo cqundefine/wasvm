@@ -34,38 +34,13 @@ Value default_value_for_type(Type type)
         case Type::v128:
             return uint128_t { 0 };
         case Type::funcref:
-            return Reference { ReferenceType::Function, UINT32_MAX, nullptr };
+            return Reference { ReferenceType::Function, {}, nullptr };
         case Type::externref:
-            return Reference { ReferenceType::Extern, UINT32_MAX, nullptr };
+            return Reference { ReferenceType::Extern, {}, nullptr };
         default:
             throw Trap();
     }
 };
-
-Type get_value_type(Value value)
-{
-    if (value.holds_alternative<uint32_t>())
-        return Type::i32;
-    if (value.holds_alternative<uint64_t>())
-        return Type::i64;
-    if (value.holds_alternative<float>())
-        return Type::f32;
-    if (value.holds_alternative<double>())
-        return Type::f64;
-    if (value.holds_alternative<uint128_t>())
-        return Type::v128;
-    if (value.holds_alternative<Reference>())
-    {
-        if (value.get<Reference>().type == ReferenceType::Function)
-            return Type::funcref;
-        if (value.get<Reference>().type == ReferenceType::Extern)
-            return Type::externref;
-        assert(false);
-    }
-
-    std::println(std::cerr, "Error: Unexpected value type");
-    throw Trap();
-}
 
 ReferenceType get_reference_type_from_reftype(Type type)
 {

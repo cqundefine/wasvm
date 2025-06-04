@@ -146,7 +146,7 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
                 break;
             case WasmFile::ImportType::Global:
                 m_imported_global_count++;
-                m_globals.push_back({ import.globalType, import.globalMut });
+                m_globals.push_back({ import.globalType, import.globalMutability });
                 break;
             case WasmFile::ImportType::Memory:
                 m_memories++;
@@ -168,7 +168,7 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
     for (const auto& global : wasmFile->globals)
     {
         validate_constant_expression(global.initCode, global.type, true);
-        m_globals.push_back({ global.type, global.mut });
+        m_globals.push_back({ global.type, global.mutability });
     }
 
     for (const auto& memory : wasmFile->memories)

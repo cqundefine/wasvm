@@ -42,7 +42,6 @@ enum class ReferenceType;
 Type read_type_from_stream(Stream&);
 bool is_valid_type(Type type);
 Value default_value_for_type(Type type);
-Type get_value_type(Value value);
 ReferenceType get_reference_type_from_reftype(Type type);
 std::string get_type_name(Type type);
 bool is_reference_type(Type type);
