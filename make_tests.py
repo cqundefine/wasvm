@@ -4,7 +4,6 @@ import os
 import subprocess
 import platform
 import shutil
-import multiprocessing
 
 TEST_DATA_PATH = "test_data"
 
@@ -23,7 +22,7 @@ WAT2WASM_PATH = os.path.join(WABT_PATH, "bin", "wat2wasm")
 
 SPECTEST_PATH = os.path.join(TEST_DATA_PATH, "spectest.wasm")
 
-ENABLED_PROPOSALS = [
+ENABLED_PROPOSALS: dict[str, str] = [
     # [ "annotations", "--enable-annotations" ],
     # [ "exception-handling", "--enable-exceptions" ],
     # [ "extended-const", "--enable-extended-const" ],
@@ -34,7 +33,7 @@ ENABLED_PROPOSALS = [
     # [ "relaxed-simd", "--enable-relaxed-simd" ],
     # [ "tail-call", "--enable-tail-call" ],
     # [ "threads", "--enable-threads" ],
-]
+] # type: ignore
 
 ENABLE_SIMD = True
 
@@ -59,7 +58,7 @@ if not os.path.exists(WABT_PATH):
         subprocess.run(["mv", WABT_DOWNLOADED_DIR, WABT_PATH])
     else:
         subprocess.run(["git", "clone", WABT_GIT_REPO, WABT_PATH, "--depth=1", "--recursive"])
-        subprocess.run(["make", "-C", WABT_PATH, f"-j{multiprocessing.cpu_count}"])
+        subprocess.run(["make", "-C", WABT_PATH, f"-j{os.cpu_count()}"])
 
 if not os.path.exists(TESTSUITE_SOURCE_PATH):
     subprocess.run(["git", "clone", "https://github.com/WebAssembly/testsuite", TESTSUITE_SOURCE_PATH, "--depth=1"])
