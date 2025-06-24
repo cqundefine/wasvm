@@ -10,7 +10,8 @@ public:
     FileStream(const std::string& filename)
         : m_file(fopen(filename.c_str(), "rb"))
     {
-        assert(m_file != nullptr);
+        if (m_file == nullptr)
+            throw StreamReadException();
 
         fseek(m_file, 0, SEEK_END);
         m_size = ftell(m_file);

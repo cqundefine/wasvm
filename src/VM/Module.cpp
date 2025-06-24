@@ -1,5 +1,6 @@
 #include "Module.h"
 #include "Trap.h"
+#include "Util/Util.h"
 #include "VM.h"
 #include "WasmFile/WasmFile.h"
 #include <cstring>
@@ -114,6 +115,16 @@ void RealModule::add_table(Ref<Table> table)
     m_tables.push_back(table);
 }
 
+void RealModule::add_memory(Ref<Memory> memory)
+{
+    m_memories.push_back(std::move(memory));
+}
+
+void RealModule::add_global(Ref<Global> global)
+{
+    m_globals.push_back(global);
+}
+
 Ref<Table> RealModule::get_table(uint32_t index) const
 {
 #ifdef DEBUG_BUILD
@@ -122,26 +133,6 @@ Ref<Table> RealModule::get_table(uint32_t index) const
 #endif
 
     return m_tables[index];
-}
-
-void RealModule::add_memory(Ref<Memory> memory)
-{
-    m_memories.push_back(memory);
-}
-
-Ref<Memory> RealModule::get_memory(uint32_t index) const
-{
-#ifdef DEBUG_BUILD
-    if (index >= m_memories.size())
-        throw Trap("Invalid memory index");
-#endif
-
-    return m_memories[index];
-}
-
-void RealModule::add_global(Ref<Global> global)
-{
-    m_globals.push_back(global);
 }
 
 Ref<Global> RealModule::get_global(uint32_t index) const

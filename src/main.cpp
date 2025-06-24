@@ -4,6 +4,7 @@
 #include "VM/Proposals.h"
 #include "VM/Trap.h"
 #include "VM/VM.h"
+#include "WASI.h"
 #include <argparse/argparse.hpp>
 #include <nlohmann/json.hpp>
 #include <print>
@@ -28,6 +29,10 @@ int main(int argc, char** argv)
 
     parser.add_argument("--load-test-module")
         .help("load the spectest module")
+        .flag();
+
+    parser.add_argument("-w", "--enable-wasi")
+        .help("enable support for WASI")
         .flag();
 
     parser.add_argument("--enable-multi-memory")
@@ -72,6 +77,9 @@ int main(int argc, char** argv)
     {
         if (parser["--load-test-module"] == true)
             VM::register_module("spectest", MakeRef<SpecTestModule>());
+
+        if (parser["-w"] == true)
+            VM::register_module("wasi_snapshot_preview1", MakeRef<WASIModule>());
 
         try
         {

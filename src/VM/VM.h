@@ -17,6 +17,8 @@ constexpr uint32_t MAX_FRAME_STACK_SIZE = 1024;
 
 class VM
 {
+    friend class WASIModule;
+
 public:
     struct Frame
     {
@@ -45,6 +47,8 @@ public:
 
 private:
     static Value run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instructions);
+
+    static Memory* get_current_frame_memory_0();
 
     static void clean_up_frame();
 

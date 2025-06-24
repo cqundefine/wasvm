@@ -103,7 +103,7 @@ Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_cur
             assert(beginValue.holds_alternative<uint32_t>());
             uint32_t begin = beginValue.get<uint32_t>();
 
-            const auto memory = new_module->get_memory(data.memoryIndex);
+            const auto* memory = new_module->get_memory(data.memoryIndex);
 
             if (begin + data.data.size() > memory->size() * WASM_PAGE_SIZE)
                 throw Trap("Out of bounds data");
@@ -313,7 +313,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 m_frame->stack.push(mod->get_memory(instruction.get_arguments<uint32_t>())->size());
                 break;
             case memory_grow: {
-                const auto memory = mod->get_memory(instruction.get_arguments<uint32_t>());
+                auto* memory = mod->get_memory(instruction.get_arguments<uint32_t>());
 
                 uint32_t addPages = m_frame->stack.pop_as<uint32_t>();
 
@@ -367,7 +367,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
 
             case memory_init: {
                 const auto& arguments = instruction.get_arguments<MemoryInitArguments>();
-                const auto memory = mod->get_memory(arguments.memoryIndex);
+                const auto* memory = mod->get_memory(arguments.memoryIndex);
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
@@ -389,8 +389,8 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 break;
             case memory_copy: {
                 const auto& arguments = instruction.get_arguments<MemoryCopyArguments>();
-                const auto& sourceMemory = mod->get_memory(arguments.source);
-                const auto& destinationMemory = mod->get_memory(arguments.destination);
+                const auto* sourceMemory = mod->get_memory(arguments.source);
+                const auto* destinationMemory = mod->get_memory(arguments.destination);
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
@@ -411,7 +411,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 break;
             }
             case memory_fill: {
-                const auto memory = mod->get_memory(instruction.get_arguments<uint32_t>());
+                const auto* memory = mod->get_memory(instruction.get_arguments<uint32_t>());
 
                 uint32_t count = m_frame->stack.pop_as<uint32_t>();
                 uint32_t val = m_frame->stack.pop_as<uint32_t>();
@@ -738,6 +738,11 @@ Value VM::run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instru
     return stack.pop();
 }
 
+Memory* VM::get_current_frame_memory_0()
+{
+    return m_frame->mod->get_memory(0);
+}
+
 void VM::clean_up_frame()
 {
     delete m_frame;
@@ -745,7 +750,7 @@ void VM::clean_up_frame()
 }
 
 template <typename LhsType, typename RhsType, Value(function)(LhsType, RhsType)>
-void VM::run_binary_operation()
+RELEASE_INLINE void VM::run_binary_operation()
 {
     RhsType rhs = m_frame->stack.pop_as<RhsType>();
     LhsType lhs = m_frame->stack.pop_as<LhsType>();
@@ -753,16 +758,16 @@ void VM::run_binary_operation()
 }
 
 template <typename T, Value(function)(T)>
-void VM::run_unary_operation()
+RELEASE_INLINE void VM::run_unary_operation()
 {
     T a = m_frame->stack.pop_as<T>();
     m_frame->stack.push(function(a));
 }
 
 template <typename ActualType, typename StackType>
-void VM::run_load_instruction(const WasmFile::MemArg& memArg)
+RELEASE_INLINE void VM::run_load_instruction(const WasmFile::MemArg& memArg)
 {
-    const auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(memArg.memoryIndex);
 
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
@@ -779,11 +784,11 @@ void VM::run_load_instruction(const WasmFile::MemArg& memArg)
 }
 
 template <typename ActualType, typename StackType>
-void VM::run_store_instruction(const WasmFile::MemArg& memArg)
+RELEASE_INLINE void VM::run_store_instruction(const WasmFile::MemArg& memArg)
 {
-    const auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(memArg.memoryIndex);
 
-    ActualType value = (ActualType)m_frame->stack.pop_as<StackType>();
+    ActualType value = static_cast<ActualType>(m_frame->stack.pop_as<StackType>());
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
     if (static_cast<uint64_t>(address) + memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
@@ -808,7 +813,7 @@ void VM::call_function(Ref<Function> function)
 template <IsVector VectorType, bool Zero>
 void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
 {
-    const auto memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(memArg.memoryIndex);
 
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
@@ -831,7 +836,7 @@ void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
 template <IsVector VectorType, typename ActualType, typename LaneType>
 void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
 {
-    const auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
 
     VectorType vector = m_frame->stack.pop_as<VectorType>();
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
@@ -849,7 +854,7 @@ void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
 template <IsVector VectorType, typename ActualType, typename StackType>
 void VM::run_store_lane_instruction(const LoadStoreLaneArguments& args)
 {
-    const auto memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
 
     VectorType vector = m_frame->stack.pop_as<VectorType>();
     uint32_t address = m_frame->stack.pop_as<uint32_t>();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Util/Util.h"
 #include "Value.h"
 #include "WasmFile/WasmFile.h"
 
@@ -116,12 +117,21 @@ public:
     Ref<WasmFile::WasmFile> wasm_file() const { return m_wasm_file; }
 
     void add_table(Ref<Table> table);
+    void add_memory(Ref<Memory> memory);
+    void add_global(Ref<Global> global);
+
     Ref<Table> get_table(uint32_t index) const;
 
-    void add_memory(Ref<Memory> memory);
-    Ref<Memory> get_memory(uint32_t index) const;
+    RELEASE_INLINE Memory* get_memory(uint32_t index) const
+    {
+#ifdef DEBUG_BUILD
+        if (index >= m_memories.size())
+            throw Trap("Invalid memory index");
+#endif
 
-    void add_global(Ref<Global> global);
+        return m_memories[index].get();
+    }
+
     Ref<Global> get_global(uint32_t index) const;
 
     void add_function(Ref<Function> function);

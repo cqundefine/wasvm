@@ -19,6 +19,17 @@
     #define LIBC_GLIBC_VERSION(maj, min) 0
 #endif
 
+#ifdef ALWAYS_INLINE
+    #undef ALWAYS_INLINE
+#endif
+#define ALWAYS_INLINE __attribute__((always_inline)) inline
+
+#ifdef DEBUG_BUILD
+    #define RELEASE_INLINE
+#else
+    #define RELEASE_INLINE ALWAYS_INLINE
+#endif
+
 template <typename T>
 using Own = std::unique_ptr<T>;
 template <typename T, typename... Args>

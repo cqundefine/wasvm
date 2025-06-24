@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Util/Util.h"
 #include "VM/Trap.h"
 #include <algorithm>
 #include <cstdint>
@@ -10,6 +11,11 @@ template <typename T, typename Exception = Trap>
 class Stack
 {
 public:
+    ALWAYS_INLINE Stack()
+    {
+        m_stack.reserve(32);
+    }
+
     constexpr void push(T value)
     {
         m_stack.push_back(value);
@@ -34,13 +40,12 @@ public:
 
     [[nodiscard]] constexpr std::vector<T> pop_n_values(uint32_t n)
     {
-        std::vector<T> values;
-        values.reserve(n);
-
-        for (uint32_t i = 0; i < n; i++)
-            values.push_back(pop());
-
-        std::reverse(values.begin(), values.end());
+#ifdef DEBUG_BUILD
+        if (size() < n)
+            throw Exception("Not enough elements on the stack");
+#endif
+        std::vector<T> values(m_stack.data() + size() - n, m_stack.data() + size());
+        erase(size() - n, 0);
         return std::move(values);
     }
 
