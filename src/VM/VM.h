@@ -23,9 +23,9 @@ public:
         std::vector<Value> locals;
         ValueStack stack;
         uint32_t ip = 0;
-        Ref<Module> mod;
+        Ref<RealModule> mod;
 
-        Frame(Ref<Module> mod)
+        Frame(Ref<RealModule> mod)
         {
             this->mod = mod;
         }

@@ -64,58 +64,71 @@ public:
         return bytes;
     }
 
-    // FIXME: Make this take the actual size of the varuint
-    template <std::unsigned_integral T, uint8_t bits>
-    T read_leb()
-    {
-        T value = 0;
-        T byte;
-        uint8_t numberBytes = 0;
-        do
-        {
-            byte = read_little_endian<uint8_t>();
-            value |= ((byte & ~(1 << 7)) << (numberBytes * 7));
-            numberBytes++;
-        } while (byte & 0x80);
-
-        uint8_t maxBytes = ceil_div(bits, 7);
-        if (numberBytes > maxBytes)
-            throw StreamReadException();
-
-        if (numberBytes == maxBytes)
-        {
-            uint8_t excessBits = maxBytes * 7 - bits;
-            uint8_t excessMask = ((1 << excessBits) - 1) << (7 - excessBits);
-            if (byte & excessMask)
-                throw StreamReadException();
-        }
-
-        return value;
-    }
-
     template <std::unsigned_integral T>
     T read_leb()
     {
-        return read_leb<T, sizeof(T) * 8>();
+        T result {};
+        size_t num_bytes = 0;
+
+        while (true)
+        {
+            if (eof())
+                throw StreamReadException(/*"Stream reached end-of-file while reading LEB128 value"*/);
+
+            auto byte = read_little_endian<uint8_t>();
+
+            T masked_byte = byte & ~(1 << 7);
+            const bool shift_too_large_for_result = num_bytes * 7 > sizeof(T) * 8;
+            if (shift_too_large_for_result)
+                throw StreamReadException(/*"Read value contains more bits than fit the chosen ValueType"*/);
+
+            const bool shift_too_large_for_byte = ((masked_byte << (num_bytes * 7)) >> (num_bytes * 7)) != masked_byte;
+            if (shift_too_large_for_byte)
+                throw StreamReadException(/*"Read byte is too large to fit the chosen ValueType"*/);
+
+            result = (result) | (masked_byte << (num_bytes * 7));
+            if (!(byte & (1 << 7)))
+                break;
+            ++num_bytes;
+        }
+
+        return result;
     }
 
-    template <std::signed_integral T, uint8_t bits>
+    template <std::signed_integral T>
     T read_leb()
     {
-        std::make_unsigned_t<T> value = 0;
-        std::make_unsigned_t<T> byte;
-        uint8_t numberBytes = 0;
+        constexpr auto BITS = sizeof(T) * 8;
+
+        T result = 0;
+        uint32_t shift = 0;
+        uint8_t byte = 0;
+
         do
         {
+            if (eof())
+                throw StreamReadException(/*"Stream reached end-of-file while reading LEB128 value"*/);
             byte = read_little_endian<uint8_t>();
-            value |= ((byte & ~(1 << 7)) << (numberBytes * 7));
-            numberBytes++;
+            result |= (T)(byte & 0x7F) << shift;
+
+            if (shift >= BITS - 7)
+            {
+                const bool has_continuation = (byte & 0x80);
+                T sign_and_unused = (int8_t)(byte << 1) >> (BITS - shift);
+                if (has_continuation)
+                    throw StreamReadException(/*"Read value contains more bits than fit the chosen ValueType"*/);
+                if (sign_and_unused != 0 && sign_and_unused != -1)
+                    throw StreamReadException(/*"Read byte is too large to fit the chosen ValueType"*/);
+                return result;
+            }
+
+            shift += 7;
         } while (byte & 0x80);
 
-        if ((numberBytes * 7 < bits) && (byte & 0x40))
-            value |= (~0ull << (numberBytes * 7));
+        if (shift < BITS && (byte & 0x40))
+            result |= ((T)~0 << shift);
 
-        return (T)value;
+        return result;
     }
 
     template <typename T>

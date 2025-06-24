@@ -99,6 +99,8 @@ Global::Global(Type type, WasmFile::GlobalMutability mutability, Value defaultVa
     , m_mutability(mutability)
     , m_value(defaultValue)
 {
+    if (defaultValue.get_type() != type)
+        throw Trap("Invalid default value for global");
 }
 
 RealModule::RealModule(size_t id, Ref<WasmFile::WasmFile> wasmFile)
@@ -160,18 +162,6 @@ void RealModule::add_function(Ref<Function> function)
 Ref<Function> RealModule::get_function(uint32_t index) const
 {
     return m_functions[index];
-}
-
-Ref<Function> RealModule::get_function(std::string_view name) const
-{
-    const auto functionExport = m_wasm_file->find_export_by_name(name);
-    if (!functionExport.has_value())
-        throw Trap(std::format("Unknown function: {}", name));
-
-    if (functionExport.value().type != WasmFile::ImportType::Function)
-        throw Trap(std::format("Export of {} is not a function", name));
-
-    return m_functions[functionExport.value().index];
 }
 
 std::optional<Ref<Function>> RealModule::start_function() const

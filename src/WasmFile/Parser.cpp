@@ -169,10 +169,10 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_typed<WasmFile::MemArg>() });
                 break;
             case i32_const:
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint32_t>(stream.read_leb<int32_t, 32>()) });
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint32_t>(stream.read_leb<int32_t>()) });
                 break;
             case i64_const:
-                instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint64_t>(stream.read_leb<int64_t, 64>()) });
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint64_t>(stream.read_leb<int64_t>()) });
                 break;
             case f32_const:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_little_endian<float>() });

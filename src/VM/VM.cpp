@@ -1,5 +1,6 @@
 #include "VM.h"
 #include "Operators.h"
+#include "Util/Util.h"
 #include <cassert>
 #include <cstring>
 
@@ -139,7 +140,10 @@ std::vector<Value> VM::run_function(const std::string& mod, const std::string& n
 
 std::vector<Value> VM::run_function(Ref<Module> mod, const std::string& name, std::span<const Value> args)
 {
-    return mod->get_function(name)->run(args);
+    const auto maybeFunction = mod->try_import(name, WasmFile::ImportType::Function);
+    if (!maybeFunction.has_value())
+        throw Trap(std::format("Unknown function: {}", name));
+    return std::get<Ref<Function>>(maybeFunction.value())->run(args);
 }
 
 std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* function, std::span<const Value> args)

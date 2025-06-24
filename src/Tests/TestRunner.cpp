@@ -1,4 +1,5 @@
 #include "TestRunner.h"
+#include "SpecTestModule.h"
 #include "Stream/FileStream.h"
 #include "VM/Module.h"
 #include "VM/VM.h"
@@ -341,18 +342,7 @@ TestStats run_tests(std::string_view path)
         return stats;
     }
 
-    try
-    {
-        FileStream specTestStream("test_data/spectest.wasm");
-        auto specTest = WasmFile::WasmFile::read_from_stream(specTestStream);
-        VM::register_module("spectest", VM::load_module(specTest, true));
-    }
-    catch (...)
-    {
-        std::println("Failed to load spectest wasm");
-        stats.vm_error = true;
-        return stats;
-    }
+    VM::register_module("spectest", MakeRef<SpecTestModule>());
 
     chdir("test_data/testsuite-processed");
     chdir(path.data());
@@ -383,13 +373,13 @@ TestStats run_tests(std::string_view path)
             }
             catch (WasmFile::InvalidWASMException e)
             {
-                std::println("{}/{} module failed to load", path, line);
+                std::println("{}/{} module failed to load: Invalid WASM ({})", path, line, e.reason());
                 module_loaded = false;
                 stats.failed_to_load++;
             }
             catch (Trap e)
             {
-                std::println("{}/{} module failed to load", path, line);
+                std::println("{}/{} module failed to load: Trapped ({})", path, line, e.reason());
                 module_loaded = false;
                 stats.failed_to_load++;
             }

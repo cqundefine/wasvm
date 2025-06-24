@@ -18,9 +18,6 @@ WABT_DOWNLOADED_DIR = os.path.join(TEST_DATA_PATH, f"wabt-{WABT_VERSION}")
 
 WABT_PATH = os.path.join(TEST_DATA_PATH, "wabt")
 WAST2JSON_PATH = os.path.join(WABT_PATH, "bin", "wast2json")
-WAT2WASM_PATH = os.path.join(WABT_PATH, "bin", "wat2wasm")
-
-SPECTEST_PATH = os.path.join(TEST_DATA_PATH, "spectest.wasm")
 
 ENABLED_PROPOSALS: dict[str, str] = [
     # [ "annotations", "--enable-annotations" ],
@@ -62,9 +59,6 @@ if not os.path.exists(WABT_PATH):
 
 if not os.path.exists(TESTSUITE_SOURCE_PATH):
     subprocess.run(["git", "clone", "https://github.com/WebAssembly/testsuite", TESTSUITE_SOURCE_PATH, "--depth=1"])
-
-if not os.path.exists(SPECTEST_PATH):
-    subprocess.run([WAT2WASM_PATH, "spectest.wat", "-o", SPECTEST_PATH])
 
 shutil.rmtree(TESTSUITE_PROCESSED_PATH, ignore_errors=True)
 

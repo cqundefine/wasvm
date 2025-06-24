@@ -1,5 +1,6 @@
 #include "Stream/FileStream.h"
-#include "TestRunner.h"
+#include "Tests/SpecTestModule.h"
+#include "Tests/TestRunner.h"
 #include "VM/Proposals.h"
 #include "VM/Trap.h"
 #include "VM/VM.h"
@@ -54,13 +55,6 @@ int main(int argc, char** argv)
     g_enable_multi_memory = parser["--enable-multi-memory"] == true;
     g_enable_extended_const = parser["--enable-extended-const"] == true;
 
-    if (parser["--load-test-module"] == true)
-    {
-        FileStream test("spectest.wasm");
-        auto testModule = VM::load_module(WasmFile::WasmFile::read_from_stream(test), true);
-        VM::register_module("spectest", testModule);
-    }
-
     if (parser["-t"] == true)
     {
         TestStats stats = run_tests(parser.get("path"));
@@ -77,11 +71,7 @@ int main(int argc, char** argv)
     else
     {
         if (parser["--load-test-module"] == true)
-        {
-            FileStream test("test_data/spectest.wasm");
-            auto testModule = VM::load_module(WasmFile::WasmFile::read_from_stream(test), true);
-            VM::register_module("spectest", testModule);
-        }
+            VM::register_module("spectest", MakeRef<SpecTestModule>());
 
         try
         {

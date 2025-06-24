@@ -104,12 +104,6 @@ using ImportedObject = std::variant<Ref<Function>, Ref<Table>, Ref<Memory>, Ref<
 class Module
 {
 public:
-    virtual Ref<Table> get_table(uint32_t index) const = 0;
-    virtual Ref<Memory> get_memory(uint32_t index) const = 0;
-    virtual Ref<Global> get_global(uint32_t index) const = 0;
-
-    virtual Ref<Function> get_function(std::string_view name) const = 0;
-
     virtual std::optional<ImportedObject> try_import(std::string_view name, WasmFile::ImportType type) const = 0;
 };
 
@@ -122,17 +116,16 @@ public:
     Ref<WasmFile::WasmFile> wasm_file() const { return m_wasm_file; }
 
     void add_table(Ref<Table> table);
-    virtual Ref<Table> get_table(uint32_t index) const override;
+    Ref<Table> get_table(uint32_t index) const;
 
     void add_memory(Ref<Memory> memory);
-    virtual Ref<Memory> get_memory(uint32_t index) const override;
+    Ref<Memory> get_memory(uint32_t index) const;
 
     void add_global(Ref<Global> global);
-    virtual Ref<Global> get_global(uint32_t index) const override;
+    Ref<Global> get_global(uint32_t index) const;
 
     void add_function(Ref<Function> function);
     Ref<Function> get_function(uint32_t index) const;
-    virtual Ref<Function> get_function(std::string_view name) const override;
 
     std::optional<Ref<Function>> start_function() const;
 

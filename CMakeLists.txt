@@ -15,8 +15,12 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
     add_compile_options(-march=x86-64-v2)
 endif()
 
-# add_compile_options(-fsanitize=address)
-# add_link_options(-fsanitize=address)
+# add_compile_options(-fsanitize=address -fsanitize=undefined)
+# add_link_options(-fsanitize=address -fsanitize=undefined)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(DEBUG_BUILD)
+endif()
 
 file(GLOB_RECURSE SOURCES src/*.cpp external/*.cpp)
 add_executable(wasvm ${SOURCES})
