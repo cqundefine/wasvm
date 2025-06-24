@@ -204,7 +204,7 @@ namespace WasmFile
 
         static Ref<WasmFile> read_from_stream(Stream& stream, bool runValidator = true);
 
-        Export find_export_by_name(const std::string& name);
+        std::optional<Export> find_export_by_name(std::string_view name);
 
         uint32_t get_import_count_of_type(ImportType type);
     };

@@ -19,7 +19,7 @@ public:
             push(value);
     }
 
-    constexpr T pop()
+    [[nodiscard]] constexpr T pop()
     {
 #ifdef DEBUG_BUILD
         if (size() == 0)
@@ -33,7 +33,7 @@ public:
         return value;
     }
 
-    constexpr std::vector<T> pop_n_values(uint32_t n)
+    [[nodiscard]] constexpr std::vector<T> pop_n_values(uint32_t n)
     {
         std::vector<T> values;
         values.reserve(n);
@@ -45,17 +45,17 @@ public:
         return std::move(values);
     }
 
-    constexpr const T& peek() const
+    [[nodiscard]] constexpr const T& peek() const
     {
         return m_stack.back();
     }
 
-    constexpr T& peek()
+    [[nodiscard]] constexpr T& peek()
     {
         return m_stack.back();
     }
 
-    constexpr T get_from_end(uint32_t index)
+    [[nodiscard]] constexpr T get_from_end(uint32_t index)
     {
 #ifdef DEBUG_BUILD
         if (index + 1 > size())

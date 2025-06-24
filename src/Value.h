@@ -26,13 +26,13 @@ enum class ReferenceType
     Extern
 };
 
-class Module;
+class RealModule;
 
 struct Reference
 {
     ReferenceType type;
     std::optional<uint32_t> index;
-    Module* module;
+    RealModule* module;
 };
 
 #ifdef DEBUG_BUILD

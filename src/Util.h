@@ -54,7 +54,7 @@ constexpr Ref<T> MakeRef(Args&&... args)
 }
 
 template <typename T, typename Base>
-constexpr Ref<T> StaticRefCast(const Ref<Base>& base)
+constexpr Ref<T> as(const Ref<Base>& base)
 {
     return std::static_pointer_cast<T>(base);
 }

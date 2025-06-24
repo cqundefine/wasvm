@@ -1,3 +1,4 @@
+#include "Module.h"
 #include <Opcode.h>
 #include <Operators.h>
 #include <Parser.h>
@@ -11,39 +12,38 @@
 #include <limits>
 #include <print>
 
-Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
+Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 {
-    auto new_module = MakeRef<Module>(m_next_module_id++);
-    new_module->wasmFile = file;
+    auto new_module = MakeRef<RealModule>(m_next_module_id++, file);
 
-    for (const auto& import : new_module->wasmFile->imports)
+    for (const auto& import : new_module->wasm_file()->imports)
     {
         ImportLocation location = find_import(import.environment, import.name, import.type);
         switch (import.type)
         {
             case WasmFile::ImportType::Function: {
-                const auto function = location.module->functions[location.index];
+                const auto function = std::get<Ref<Function>>(location.imported);
                 if (function->type() != file->functionTypes[import.functionTypeIndex])
                     throw Trap();
-                new_module->functions.push_back(function);
+                new_module->add_function(function);
                 break;
             }
             case WasmFile::ImportType::Table: {
-                const auto table = location.module->get_table(location.index);
+                const auto table = std::get<Ref<Table>>(location.imported);
                 if (table->type() != import.tableRefType || !table->limits().fits_within(import.tableLimits))
                     throw Trap();
                 new_module->add_table(table);
                 break;
             }
             case WasmFile::ImportType::Memory: {
-                const auto memory = location.module->get_memory(location.index);
+                const auto memory = std::get<Ref<Memory>>(location.imported);
                 if (!memory->limits().fits_within(import.memoryLimits))
                     throw Trap();
                 new_module->add_memory(memory);
                 break;
             }
             case WasmFile::ImportType::Global: {
-                const auto global = location.module->get_global(location.index);
+                const auto global = std::get<Ref<Global>>(location.imported);
                 if (global->type() != import.globalType || global->mutability() != import.globalMutability)
                     throw Trap();
                 new_module->add_global(global);
@@ -52,24 +52,24 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
         }
     }
 
-    for (size_t i = 0; i < new_module->wasmFile->functionTypeIndexes.size(); i++)
+    for (size_t i = 0; i < new_module->wasm_file()->functionTypeIndexes.size(); i++)
     {
-        auto* type = &new_module->wasmFile->functionTypes[new_module->wasmFile->functionTypeIndexes[i]];
-        auto* code = &new_module->wasmFile->codeBlocks[i];
-        auto function = MakeRef<Function>(type, code, new_module);
-        new_module->functions.push_back(function);
+        auto* type = &new_module->wasm_file()->functionTypes[new_module->wasm_file()->functionTypeIndexes[i]];
+        auto* code = &new_module->wasm_file()->codeBlocks[i];
+        auto function = MakeRef<RealFunction>(type, code, new_module);
+        new_module->add_function(function);
     }
 
-    for (const auto& global : new_module->wasmFile->globals)
+    for (const auto& global : new_module->wasm_file()->globals)
         new_module->add_global(MakeRef<Global>(global.type, global.mutability, run_bare_code(new_module, global.initCode)));
 
-    for (const auto& memory : new_module->wasmFile->memories)
+    for (const auto& memory : new_module->wasm_file()->memories)
         new_module->add_memory(MakeRef<Memory>(memory));
 
-    for (const auto& tableInfo : new_module->wasmFile->tables)
+    for (const auto& tableInfo : new_module->wasm_file()->tables)
         new_module->add_table(MakeRef<Table>(tableInfo, Reference { get_reference_type_from_reftype(tableInfo.refType), {}, new_module.get() }));
 
-    for (auto& element : new_module->wasmFile->elements)
+    for (auto& element : new_module->wasm_file()->elements)
     {
         if (element.mode == WasmFile::ElementMode::Active)
         {
@@ -103,7 +103,7 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
             element = WasmFile::Element();
     }
 
-    for (auto& data : new_module->wasmFile->dataBlocks)
+    for (auto& data : new_module->wasm_file()->dataBlocks)
     {
         if (data.mode == WasmFile::ElementMode::Active)
         {
@@ -122,8 +122,8 @@ Ref<Module> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current
         }
     }
 
-    if (new_module->wasmFile->startFunction)
-        run_function(new_module, *new_module->wasmFile->startFunction, {});
+    if (auto start_function = new_module->start_function(); start_function.has_value())
+        (void)start_function.value()->run({});
 
     if (!dont_make_current)
         m_current_module = new_module;
@@ -148,17 +148,10 @@ std::vector<Value> VM::run_function(const std::string& mod, const std::string& n
 
 std::vector<Value> VM::run_function(Ref<Module> mod, const std::string& name, std::span<const Value> args)
 {
-    WasmFile::Export functionExport = mod->wasmFile->find_export_by_name(name);
-    assert(functionExport.type == WasmFile::ImportType::Function);
-    return run_function(mod, functionExport.index, args);
+    return mod->get_function(name)->run(args);
 }
 
-std::vector<Value> VM::run_function(Ref<Module> mod, uint32_t index, std::span<const Value> args)
-{
-    return run_function(mod, mod->functions[index], args);
-}
-
-std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std::span<const Value> args)
+std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* function, std::span<const Value> args)
 {
     if (m_frame_stack.size() >= MAX_FRAME_STACK_SIZE)
         throw Trap();
@@ -233,7 +226,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std
             case return_:
                 return std::move(m_frame->stack.pop_n_values(type.returns.size()));
             case call:
-                call_function(mod->functions[instruction.get_arguments<uint32_t>()]);
+                call_function(mod->get_function(instruction.get_arguments<uint32_t>()));
                 break;
             case call_indirect: {
                 const auto& arguments = instruction.get_arguments<CallIndirectArguments>();
@@ -250,9 +243,9 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std
                     throw Trap();
 
                 auto* module = reference.module ? reference.module : mod.get();
-                auto function = module->functions[*reference.index];
+                auto function = module->get_function(*reference.index);
 
-                if (function->type() != module->wasmFile->functionTypes[arguments.typeIndex])
+                if (function->type() != module->wasm_file()->functionTypes[arguments.typeIndex])
                     throw Trap();
 
                 call_function(function);
@@ -260,7 +253,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std
             }
 
             case drop:
-                m_frame->stack.pop();
+                (void)m_frame->stack.pop();
                 break;
             case select_:
             case select_typed: {
@@ -385,7 +378,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std
                 uint32_t source = m_frame->stack.pop_as<uint32_t>();
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
-                const auto& data = mod->wasmFile->dataBlocks[arguments.dataIndex];
+                const auto& data = mod->wasm_file()->dataBlocks[arguments.dataIndex];
 
                 if (static_cast<uint64_t>(source) + count > data.data.size())
                     throw Trap();
@@ -397,7 +390,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std
                 break;
             }
             case data_drop:
-                mod->wasmFile->dataBlocks[instruction.get_arguments<uint32_t>()] = WasmFile::Data();
+                mod->wasm_file()->dataBlocks[instruction.get_arguments<uint32_t>()] = WasmFile::Data();
                 break;
             case memory_copy: {
                 const auto& arguments = instruction.get_arguments<MemoryCopyArguments>();
@@ -444,7 +437,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std
 
                 const auto table = mod->get_table(arguments.tableIndex);
 
-                const auto& element = mod->wasmFile->elements[arguments.elementIndex];
+                const auto& element = mod->wasm_file()->elements[arguments.elementIndex];
                 size_t elemSize = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
 
                 if (static_cast<uint64_t>(source) + count > elemSize || static_cast<uint64_t>(destination) + count > table->size())
@@ -464,7 +457,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, Ref<Function> function, std
                 break;
             }
             case elem_drop:
-                mod->wasmFile->elements[instruction.get_arguments<uint32_t>()] = WasmFile::Element();
+                mod->wasm_file()->elements[instruction.get_arguments<uint32_t>()] = WasmFile::Element();
                 break;
             case table_copy: {
                 const auto& arguments = instruction.get_arguments<TableCopyArguments>();
@@ -679,7 +672,7 @@ Ref<Module> VM::get_registered_module(const std::string& name)
     return m_registered_modules[name];
 }
 
-Value VM::run_bare_code(Ref<Module> mod, std::span<const Instruction> instructions)
+Value VM::run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instructions)
 {
     ValueStack stack;
 
@@ -750,8 +743,7 @@ Value VM::run_bare_code(Ref<Module> mod, std::span<const Instruction> instructio
 void VM::clean_up_frame()
 {
     delete m_frame;
-    m_frame = m_frame_stack.top();
-    m_frame_stack.pop();
+    m_frame = m_frame_stack.pop();
 }
 
 template <typename LhsType, typename RhsType, Value(function)(LhsType, RhsType)>
@@ -811,7 +803,7 @@ void VM::branch_to_label(Label label)
 void VM::call_function(Ref<Function> function)
 {
     const auto args = m_frame->stack.pop_n_values(function->type().params.size());
-    const auto returnedValues = run_function(function->parent(), function, args);
+    const auto returnedValues = function->run(args);
     m_frame->stack.push_values(returnedValues);
 }
 
@@ -871,16 +863,16 @@ void VM::run_store_lane_instruction(const LoadStoreLaneArguments& args)
     memcpy(&memory->data()[address + args.memArg.offset], &value, sizeof(ActualType));
 }
 
-VM::ImportLocation VM::find_import(const std::string& environment, const std::string& name, WasmFile::ImportType importType)
+VM::ImportLocation VM::find_import(std::string_view environment, std::string_view name, WasmFile::ImportType type)
 {
     for (const auto& [module_name, module] : m_registered_modules)
     {
         if (module_name == environment)
         {
-            WasmFile::Export exp = module->wasmFile->find_export_by_name(name);
-            if (exp.type != importType)
+            auto maybeImported = module->try_import(name, type);
+            if (!maybeImported.has_value())
                 throw Trap();
-            return ImportLocation { module, exp.index };
+            return ImportLocation { module, maybeImported.value() };
         }
     }
 

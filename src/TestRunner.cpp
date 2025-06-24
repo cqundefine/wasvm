@@ -313,9 +313,18 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string&
         else
             mod = VM::current_module();
 
-        WasmFile::Export exp = mod->wasmFile->find_export_by_name(action["field"]);
-        assert(exp.type == WasmFile::ImportType::Global);
-        return { mod->get_global(exp.index)->get() };
+        const auto globalName = action["field"].get<std::string>();
+
+        auto maybeImported = mod->try_import(globalName, WasmFile::ImportType::Global);
+        if (!maybeImported.has_value())
+        {
+            stats.skipped++;
+            failed = true;
+            std::println("{}/{} skipped: no global found: {}", path, line, globalName);
+            return {};
+        }
+
+        return { std::get<Ref<Global>>(maybeImported.value())->get() };
     }
     else
     {

@@ -386,7 +386,7 @@ namespace WasmFile
         }
     }
 
-    Export WasmFile::find_export_by_name(const std::string& name)
+    std::optional<Export> WasmFile::find_export_by_name(std::string_view name)
     {
         for (const auto& exportValue : exports)
         {
@@ -394,8 +394,7 @@ namespace WasmFile
                 return exportValue;
         }
 
-        std::println(std::cerr, "Error: Tried to find a non existent export: {}", name);
-        throw Trap();
+        return {};
     }
 
     uint32_t WasmFile::get_import_count_of_type(ImportType type)

@@ -3,27 +3,39 @@
 #include <Parser.h>
 #include <Value.h>
 #include <WasmFile.h>
-
-struct Module;
+#include <memory>
+#include <optional>
+#include <string_view>
 
 class Function
 {
 public:
-    constexpr Function(WasmFile::FunctionType* type, WasmFile::Code* code, Ref<Module> parent)
+    virtual const WasmFile::FunctionType& type() const = 0;
+    [[nodiscard]] virtual std::vector<Value> run(std::span<const Value> args) const = 0;
+};
+
+struct RealModule;
+
+class RealFunction : public Function
+{
+public:
+    constexpr RealFunction(WasmFile::FunctionType* type, WasmFile::Code* code, Ref<RealModule> parent)
         : m_type(type)
         , m_code(code)
         , m_parent(parent)
     {
     }
 
-    const WasmFile::FunctionType& type() const { return *m_type; }
+    virtual const WasmFile::FunctionType& type() const override;
     const WasmFile::Code& code() const { return *m_code; }
-    Ref<Module> parent() const { return m_parent.lock(); }
+    Ref<RealModule> parent() const { return m_parent.lock(); }
+
+    [[nodiscard]] virtual std::vector<Value> run(std::span<const Value> args) const override;
 
 private:
     WasmFile::FunctionType* m_type;
     WasmFile::Code* m_code;
-    Weak<Module> m_parent;
+    Weak<RealModule> m_parent;
 };
 
 class Memory
@@ -91,27 +103,51 @@ private:
     WasmFile::GlobalMutability m_mutability;
 };
 
+using ImportedObject = std::variant<Ref<Function>, Ref<Table>, Ref<Memory>, Ref<Global>>;
+
 class Module
 {
 public:
-    Ref<WasmFile::WasmFile> wasmFile;
-    std::vector<Ref<Function>> functions;
-    size_t id;
+    virtual Ref<Table> get_table(uint32_t index) const = 0;
+    virtual Ref<Memory> get_memory(uint32_t index) const = 0;
+    virtual Ref<Global> get_global(uint32_t index) const = 0;
 
-    Module(size_t id);
+    virtual Ref<Function> get_function(std::string_view name) const = 0;
 
-    // FIXME: Do these actually need a function, because the validator guarantees us correctness
+    virtual std::optional<ImportedObject> try_import(std::string_view name, WasmFile::ImportType type) const = 0;
+};
+
+class RealModule : public Module
+{
+public:
+    RealModule(size_t id, Ref<WasmFile::WasmFile> wasmFile);
+
+    size_t id() const { return m_id; }
+    Ref<WasmFile::WasmFile> wasm_file() const { return m_wasm_file; }
+
     void add_table(Ref<Table> table);
-    Ref<Table> get_table(uint32_t index) const;
+    virtual Ref<Table> get_table(uint32_t index) const override;
 
     void add_memory(Ref<Memory> memory);
-    Ref<Memory> get_memory(uint32_t index) const;
+    virtual Ref<Memory> get_memory(uint32_t index) const override;
 
     void add_global(Ref<Global> global);
-    Ref<Global> get_global(uint32_t index) const;
+    virtual Ref<Global> get_global(uint32_t index) const override;
+
+    void add_function(Ref<Function> function);
+    Ref<Function> get_function(uint32_t index) const;
+    virtual Ref<Function> get_function(std::string_view name) const override;
+
+    std::optional<Ref<Function>> start_function() const;
+
+    virtual std::optional<ImportedObject> try_import(std::string_view name, WasmFile::ImportType type) const override;
 
 private:
-    std::vector<Ref<Table>> tables;
-    std::vector<Ref<Memory>> memories;
-    std::vector<Ref<Global>> globals;
+    size_t m_id;
+    Ref<WasmFile::WasmFile> m_wasm_file;
+
+    std::vector<Ref<Function>> m_functions;
+    std::vector<Ref<Table>> m_tables;
+    std::vector<Ref<Memory>> m_memories;
+    std::vector<Ref<Global>> m_globals;
 };
