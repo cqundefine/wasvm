@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Stack.h>
+#include <Trap.h>
 #include <Type.h>
 #include <Value.h>
 #include <iostream>
@@ -15,10 +16,7 @@ public:
         Value value = pop();
 #ifdef DEBUG_BUILD
         if (!value.holds_alternative<ToValueType<T>>())
-        {
-            std::println(std::cerr, "Error: Unxpected type on the stack: {}, expected {}", get_type_name(value.get_type()), value_type_name<ToValueType<T>>);
-            throw Trap();
-        }
+            throw Trap(std::format("Unxpected type on the stack: {}, expected {}", get_type_name(value.get_type()), value_type_name<ToValueType<T>>));
 #endif
         return std::bit_cast<T>(value.get<ToValueType<T>>());
     }

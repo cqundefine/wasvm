@@ -72,7 +72,7 @@ void Table::grow(uint32_t elements, Reference value)
 Reference Table::get(uint32_t index) const
 {
     if (index >= m_elements.size())
-        throw Trap();
+        throw Trap("Table get out of bounds");
 
     return m_elements[index];
 }
@@ -80,7 +80,7 @@ Reference Table::get(uint32_t index) const
 void Table::set(uint32_t index, Reference element)
 {
     if (index >= m_elements.size())
-        throw Trap();
+        throw Trap("Table set out of bounds");
 
     m_elements[index] = element;
 }
@@ -117,7 +117,7 @@ Ref<Table> RealModule::get_table(uint32_t index) const
 {
 #ifdef DEBUG_BUILD
     if (index >= m_tables.size())
-        throw Trap();
+        throw Trap("Invalid table index");
 #endif
 
     return m_tables[index];
@@ -132,7 +132,7 @@ Ref<Memory> RealModule::get_memory(uint32_t index) const
 {
 #ifdef DEBUG_BUILD
     if (index >= m_memories.size())
-        throw Trap();
+        throw Trap("Invalid memory index");
 #endif
 
     return m_memories[index];
@@ -147,7 +147,7 @@ Ref<Global> RealModule::get_global(uint32_t index) const
 {
 #ifdef DEBUG_BUILD
     if (index >= m_globals.size())
-        throw Trap();
+        throw Trap("Invalid global index");
 #endif
 
     return m_globals[index];
@@ -167,12 +167,10 @@ Ref<Function> RealModule::get_function(std::string_view name) const
 {
     const auto functionExport = m_wasm_file->find_export_by_name(name);
     if (!functionExport.has_value())
-        throw Trap();
+        throw Trap(std::format("Unknown function: {}", name));
 
-#ifdef DEBUG_BUILD
     if (functionExport.value().type != WasmFile::ImportType::Function)
-        throw Trap();
-#endif
+        throw Trap(std::format("Export of {} is not a function", name));
 
     return m_functions[functionExport.value().index];
 }

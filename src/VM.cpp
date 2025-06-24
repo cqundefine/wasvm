@@ -24,28 +24,28 @@ Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_cur
             case WasmFile::ImportType::Function: {
                 const auto function = std::get<Ref<Function>>(location.imported);
                 if (function->type() != file->functionTypes[import.functionTypeIndex])
-                    throw Trap();
+                    throw Trap("Invalid function import");
                 new_module->add_function(function);
                 break;
             }
             case WasmFile::ImportType::Table: {
                 const auto table = std::get<Ref<Table>>(location.imported);
                 if (table->type() != import.tableRefType || !table->limits().fits_within(import.tableLimits))
-                    throw Trap();
+                    throw Trap("Invalid table import");
                 new_module->add_table(table);
                 break;
             }
             case WasmFile::ImportType::Memory: {
                 const auto memory = std::get<Ref<Memory>>(location.imported);
                 if (!memory->limits().fits_within(import.memoryLimits))
-                    throw Trap();
+                    throw Trap("Invalid memory import");
                 new_module->add_memory(memory);
                 break;
             }
             case WasmFile::ImportType::Global: {
                 const auto global = std::get<Ref<Global>>(location.imported);
                 if (global->type() != import.globalType || global->mutability() != import.globalMutability)
-                    throw Trap();
+                    throw Trap("Invalid global import");
                 new_module->add_global(global);
                 break;
             }
@@ -82,7 +82,7 @@ Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_cur
             size_t size = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
 
             if (begin + size > table->size())
-                throw Trap();
+                throw Trap("Out of bounds element");
 
             for (size_t i = 0; i < size; i++)
             {
@@ -114,7 +114,7 @@ Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_cur
             const auto memory = new_module->get_memory(data.memoryIndex);
 
             if (begin + data.data.size() > memory->size() * WASM_PAGE_SIZE)
-                throw Trap();
+                throw Trap("Out of bounds data");
 
             memcpy(memory->data() + begin, data.data.data(), data.data.size());
 
@@ -154,7 +154,7 @@ std::vector<Value> VM::run_function(Ref<Module> mod, const std::string& name, st
 std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* function, std::span<const Value> args)
 {
     if (m_frame_stack.size() >= MAX_FRAME_STACK_SIZE)
-        throw Trap();
+        throw Trap("Frame stack exceeded");
 
     m_frame_stack.push(m_frame);
     m_frame = new Frame(mod);
@@ -165,7 +165,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
     const auto& code = function->code();
 
     if (args.size() != type.params.size())
-        throw Trap();
+        throw Trap("Invalid argument count passed");
 
     for (const auto& param : args)
         m_frame->locals.push_back(param);
@@ -181,7 +181,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
         {
             using enum Opcode;
             case unreachable:
-                throw Trap();
+                throw Trap("Unreachable");
             case nop:
             case block:
             case loop:
@@ -237,16 +237,16 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 const auto reference = table->get(index);
 
                 if (!reference.index)
-                    throw Trap();
+                    throw Trap("Call indirect on null reference");
 
                 if (reference.type != ReferenceType::Function)
-                    throw Trap();
+                    throw Trap("Call indirect on non-function reference");
 
                 auto* module = reference.module ? reference.module : mod.get();
                 auto function = module->get_function(*reference.index);
 
                 if (function->type() != module->wasm_file()->functionTypes[arguments.typeIndex])
-                    throw Trap();
+                    throw Trap("Invalid call indirect type");
 
                 call_function(function);
                 break;
@@ -381,10 +381,10 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 const auto& data = mod->wasm_file()->dataBlocks[arguments.dataIndex];
 
                 if (static_cast<uint64_t>(source) + count > data.data.size())
-                    throw Trap();
+                    throw Trap("Out of bounds memory init");
 
                 if (static_cast<uint64_t>(destination) + count > memory->size() * WASM_PAGE_SIZE)
-                    throw Trap();
+                    throw Trap("Out of bounds memory init");
 
                 memcpy(memory->data() + destination, data.data.data() + source, count);
                 break;
@@ -402,7 +402,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
                 if (static_cast<uint64_t>(source) + count > sourceMemory->size() * WASM_PAGE_SIZE || static_cast<uint64_t>(destination) + count > destinationMemory->size() * WASM_PAGE_SIZE)
-                    throw Trap();
+                    throw Trap("Out of bounds memory copy");
 
                 if (count == 0)
                     break;
@@ -423,7 +423,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 uint32_t destination = m_frame->stack.pop_as<uint32_t>();
 
                 if (static_cast<uint64_t>(destination) + count > memory->size() * WASM_PAGE_SIZE)
-                    throw Trap();
+                    throw Trap("Out of bounds memory fill");
 
                 memset(memory->data() + destination, val, count);
                 break;
@@ -441,7 +441,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 size_t elemSize = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
 
                 if (static_cast<uint64_t>(source) + count > elemSize || static_cast<uint64_t>(destination) + count > table->size())
-                    throw Trap();
+                    throw Trap("Out of bounds table init");
 
                 for (uint32_t i = 0; i < count; i++)
                 {
@@ -469,7 +469,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 const auto sourceTable = mod->get_table(arguments.source);
 
                 if (static_cast<uint64_t>(source) + count > sourceTable->size() || static_cast<uint64_t>(destination) + count > destinationTable->size())
-                    throw Trap();
+                    throw Trap("Out of bounds table copy");
 
                 if (count == 0)
                     break;
@@ -516,7 +516,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
 
                 if (destination + count > table->size())
-                    throw Trap();
+                    throw Trap("Out of bounds table fill");
 
                 for (uint32_t i = 0; i < count; i++)
                     table->unsafe_set(destination + i, value);
@@ -659,10 +659,14 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 run_store_lane_instruction<uint64x2_t, uint64_t, uint64_t>(instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
             default:
-                std::println(std::cerr, "Error: Unknown opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
-                throw Trap();
+                throw Trap(std::format("Unknown opcode {:#x}", static_cast<uint32_t>(instruction.opcode)));
         }
     }
+
+#ifdef DEBUG_BUILD
+    if (m_frame->stack.size() != type.returns.size())
+        throw Trap("Extra elements on stack at the end of a function");
+#endif
 
     return std::move(m_frame->stack.pop_n_values(type.returns.size()));
 }
@@ -727,14 +731,13 @@ Value VM::run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instru
                 stack.push(instruction.get_arguments<uint128_t>());
                 break;
             default:
-                std::println(std::cerr, "Error: Unknown or disallowed in bare code opcode {:#x}", static_cast<uint32_t>(instruction.opcode));
-                throw Trap();
+                throw Trap(std::format("Unknown or disallowed in bare code opcode {:#x}", static_cast<uint32_t>(instruction.opcode)));
         }
     }
 
 #ifdef DEBUG_BUILD
     if (stack.size() != 1)
-        throw Trap();
+        throw Trap("Extra elements on stack at the end of bare code");
 #endif
 
     return stack.pop();
@@ -769,7 +772,7 @@ void VM::run_load_instruction(const WasmFile::MemArg& memArg)
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
     if (static_cast<uint64_t>(address) + memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
-        throw Trap();
+        throw Trap("Out of bounds load");
 
     ActualType value;
     memcpy(&value, &memory->data()[address + memArg.offset], sizeof(ActualType));
@@ -789,7 +792,7 @@ void VM::run_store_instruction(const WasmFile::MemArg& memArg)
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
     if (static_cast<uint64_t>(address) + memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
-        throw Trap();
+        throw Trap("Out of bounds store");
 
     memcpy(&memory->data()[address + memArg.offset], &value, sizeof(ActualType));
 }
@@ -815,7 +818,7 @@ void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
     if (static_cast<uint64_t>(address) + memArg.offset + sizeof(VectorElement<VectorType>) > memory->size() * WASM_PAGE_SIZE)
-        throw Trap();
+        throw Trap("Out of bounds load");
 
     VectorElement<VectorType> value {};
     memcpy(&value, &memory->data()[address + memArg.offset], sizeof(VectorElement<VectorType>));
@@ -839,7 +842,7 @@ void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
     if (static_cast<uint64_t>(address) + args.memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
-        throw Trap();
+        throw Trap("Out of bounds load");
 
     ActualType value;
     memcpy(&value, &memory->data()[address + args.memArg.offset], sizeof(ActualType));
@@ -857,7 +860,7 @@ void VM::run_store_lane_instruction(const LoadStoreLaneArguments& args)
     uint32_t address = m_frame->stack.pop_as<uint32_t>();
 
     if (static_cast<uint64_t>(address) + args.memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
-        throw Trap();
+        throw Trap("Out of bounds store");
 
     ActualType value = vector[args.lane];
     memcpy(&memory->data()[address + args.memArg.offset], &value, sizeof(ActualType));
@@ -871,10 +874,10 @@ VM::ImportLocation VM::find_import(std::string_view environment, std::string_vie
         {
             auto maybeImported = module->try_import(name, type);
             if (!maybeImported.has_value())
-                throw Trap();
+                throw Trap(std::format("Unknown or invalid import: {}:{}", environment, name));
             return ImportLocation { module, maybeImported.value() };
         }
     }
 
-    throw Trap();
+    throw Trap(std::format("Unknown or invalid import: {}:{}", environment, name));
 }

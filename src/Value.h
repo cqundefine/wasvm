@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SIMD.h>
+#include <Trap.h>
 #include <Type.h>
 #include <Util.h>
 #include <cassert>
@@ -8,10 +9,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <utility>
-
-struct Trap
-{
-};
 
 struct Label
 {
@@ -128,7 +125,7 @@ public:
     {
 #ifdef DEBUG_BUILD
         if (!holds_alternative<T>())
-            throw Trap();
+            throw Trap("Invalid get on value");
 #endif
         return *std::bit_cast<T*>(&m_data);
     }
@@ -138,7 +135,7 @@ public:
     {
 #ifdef DEBUG_BUILD
         if (!holds_alternative<T>())
-            throw Trap();
+            throw Trap("Invalid get on value");
 #endif
         return *std::bit_cast<const T*>(&m_data);
     }

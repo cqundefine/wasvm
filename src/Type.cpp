@@ -38,7 +38,7 @@ Value default_value_for_type(Type type)
         case Type::externref:
             return Reference { ReferenceType::Extern, {}, nullptr };
         default:
-            throw Trap();
+            throw Trap("Invalid type");
     }
 };
 
@@ -49,8 +49,7 @@ ReferenceType get_reference_type_from_reftype(Type type)
     if (type == Type::externref)
         return ReferenceType::Extern;
 
-    std::println(std::cerr, "Error: Unexpected ref type");
-    throw Trap();
+    throw Trap("Unexpected ref type");
 }
 
 std::string get_type_name(Type type)
@@ -72,10 +71,8 @@ std::string get_type_name(Type type)
         case Type::externref:
             return "externref";
         default:
-            assert(false);
+            throw Trap("Invalid type");
     }
-
-    std::unreachable();
 }
 
 bool is_reference_type(Type type)

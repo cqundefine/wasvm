@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Util.h>
-#include <Value.h>
+#include <Trap.h>
 #include <span>
+#include <vector>
 
 template <typename T, typename Exception = Trap>
 class Stack
@@ -23,10 +23,7 @@ public:
     {
 #ifdef DEBUG_BUILD
         if (size() == 0)
-        {
-            std::println(std::cerr, "Error: Tried to pop from an empty stack");
-            throw Exception();
-        }
+            throw Exception("Tried to pop from an empty stack");
 #endif
         T value = m_stack.back();
         m_stack.pop_back();
@@ -59,10 +56,7 @@ public:
     {
 #ifdef DEBUG_BUILD
         if (index + 1 > size())
-        {
-            std::println(std::cerr, "Error: Tried to pop from an empty stack");
-            throw Exception();
-        }
+            std::println(std::cerr, "Error: Tried to get a stack element out of bounds");
 #endif
         return m_stack[size() - index - 1];
     }

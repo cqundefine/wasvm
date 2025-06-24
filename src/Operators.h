@@ -94,10 +94,10 @@ constexpr Value operation_div(LhsType a, RhsType b)
     {
         if constexpr (std::is_signed<LhsType>())
             if (a == (static_cast<ToValueType<LhsType>>(1) << (sizeof(LhsType) * 8 - 1)) && b == -1)
-                throw Trap();
+                throw Trap("Division overflow");
 
         if (b == 0)
-            throw Trap();
+            throw Trap("Division by zero");
     }
 
     return (ToValueType<LhsType>)(a / b);
@@ -111,7 +111,7 @@ constexpr Value operation_rem(LhsType a, RhsType b)
             return static_cast<ToValueType<LhsType>>(0);
 
     if (b == 0)
-        throw Trap();
+        throw Trap("Division by zero");
 
     return static_cast<ToValueType<LhsType>>(a % b);
 }
@@ -230,7 +230,7 @@ template <std::integral TruncatedType, std::floating_point T>
 constexpr Value operation_trunc(T a)
 {
     if (std::isnan(a) || std::isinf(a))
-        throw Trap();
+        throw Trap("NaN or Inf in truncate");
 
     a = std::trunc(a);
 
@@ -238,10 +238,10 @@ constexpr Value operation_trunc(T a)
     constexpr auto maximum = static_cast<long double>(std::numeric_limits<TruncatedType>::max());
 
     if (static_cast<long double>(a) < minimum)
-        throw Trap();
+        throw Trap("Truncate overflow");
 
     if (static_cast<long double>(a) > maximum)
-        throw Trap();
+        throw Trap("Truncate overflow");
 
     return static_cast<ToValueType<TruncatedType>>(static_cast<TruncatedType>(a));
 }

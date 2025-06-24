@@ -1,6 +1,7 @@
 #include <FileStream.h>
 #include <Proposals.h>
 #include <TestRunner.h>
+#include <Trap.h>
 #include <VM.h>
 #include <WasmFile.h>
 #include <argparse/argparse.hpp>
@@ -96,7 +97,7 @@ int main(int argc, char** argv)
         }
         catch (const Trap& trap)
         {
-            std::println("Trapped");
+            std::println("Trapped ({})", trap.reason());
         }
         catch (const WasmFile::InvalidWASMException& e)
         {
