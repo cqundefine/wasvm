@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Stack.h>
-#include <Trap.h>
-#include <Type.h>
-#include <Value.h>
-#include <iostream>
-#include <span>
+#include "Trap.h"
+#include "Util/Stack.h"
+#include "Value.h"
 
 class ValueStack : public Stack<Value>
 {

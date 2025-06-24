@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Util.h>
+#include "Util/Util.h"
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <string>
-#include <typeinfo>
 #include <vector>
 
 class Stream;
@@ -33,7 +32,7 @@ public:
     virtual size_t offset() const = 0;
     virtual size_t size() const = 0;
 
-    void skip(ssize_t bytes)
+    void skip(int64_t bytes)
     {
         move_to(offset() + bytes);
     }
@@ -148,17 +147,13 @@ public:
     {
         uint32_t size = read_leb<uint32_t>();
 
-        char* arr = (char*)malloc(size + 1);
-        read((void*)arr, size);
-        arr[size] = 0;
+        std::string string(size, '\0');
+        read(string.data(), size);
 
-        std::string newString = std::string(arr, size);
-        free(arr);
-
-        if (!is_valid_utf8(newString))
+        if (!is_valid_utf8(string))
             throw StreamReadException();
 
-        return newString;
+        return string;
     }
 
     template <typename T>

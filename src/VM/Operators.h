@@ -1,13 +1,10 @@
 #pragma once
 
-#include <SIMD.h>
-#include <Util.h>
-#include <Value.h>
-#include <bit>
-#include <cassert>
+#include "Util/SIMD.h"
+#include "Util/Util.h"
+#include "Value.h"
 #include <cmath>
 #include <concepts>
-#include <type_traits>
 
 #define GENERIC_BINARY_OPERATION_OPERATOR(name, op)         \
     template <typename LhsType, typename RhsType>           \

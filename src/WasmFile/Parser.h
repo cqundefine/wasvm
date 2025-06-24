@@ -1,14 +1,10 @@
 #pragma once
 
-#include <Opcode.h>
-#include <Stream.h>
-#include <Type.h>
-#include <Value.h>
-#include <WasmFile.h>
-#include <optional>
-#include <print>
-#include <variant>
-#include <vector>
+#include "Opcode.h"
+#include "VM/Label.h"
+#include "VM/Trap.h"
+#include "WasmFile.h"
+#include <cstdint>
 
 struct BlockLoopArguments
 {
@@ -85,10 +81,7 @@ struct Instruction
     {
 #ifdef DEBUG_BUILD
         if (!std::holds_alternative<T>(arguments))
-        {
-            std::println(std::cerr, "Tried to get an invalid type of arguments");
-            exit(1);
-        }
+            throw Trap("Tried to get an invalid type of arguments");
 #endif
         return std::get<T>(arguments);
     }
@@ -98,10 +91,7 @@ struct Instruction
     {
 #ifdef DEBUG_BUILD
         if (!std::holds_alternative<T>(arguments))
-        {
-            std::println(std::cerr, "Tried to get an invalid type of arguments");
-            exit(1);
-        }
+            throw Trap("Tried to get an invalid type of arguments");
 #endif
         return std::get<T>(arguments);
     }

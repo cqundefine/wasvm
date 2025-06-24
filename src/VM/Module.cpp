@@ -1,9 +1,8 @@
-#include "WasmFile.h"
-#include <Module.h>
-#include <VM.h>
+#include "Module.h"
+#include "Trap.h"
+#include "VM.h"
+#include "WasmFile/WasmFile.h"
 #include <cstring>
-#include <optional>
-#include <utility>
 
 const WasmFile::FunctionType& RealFunction::type() const
 {

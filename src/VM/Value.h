@@ -1,21 +1,11 @@
 #pragma once
 
-#include <SIMD.h>
-#include <Trap.h>
-#include <Type.h>
-#include <Util.h>
-#include <cassert>
-#include <cstddef>
+#include "Trap.h"
+#include "Type.h"
+#include "Util/SIMD.h"
 #include <cstdint>
-#include <cstdio>
+#include <optional>
 #include <utility>
-
-struct Label
-{
-    uint32_t continuation;
-    uint32_t arity;
-    uint32_t stackHeight;
-};
 
 enum class ReferenceType
 {
@@ -162,7 +152,7 @@ public:
                 return ::Type::externref;
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 
 private:
@@ -207,7 +197,7 @@ private:
         if constexpr (std::is_same_v<T, Reference>)
             return Type::Reference;
 
-        UNREACHABLE();
+        std::unreachable();
     }
 };
 
@@ -241,6 +231,6 @@ struct std::formatter<Value>
                 return std::format_to(ctx.out(), "{}({})", type, *reference.index);
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 };

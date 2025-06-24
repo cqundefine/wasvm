@@ -1,18 +1,12 @@
-#include <FileStream.h>
-#include <SIMD.h>
-#include <TestRunner.h>
-#include <Util.h>
-#include <VM.h>
-#include <Value.h>
-#include <bit>
-#include <concepts>
+#include "TestRunner.h"
+#include "Stream/FileStream.h"
+#include "VM/Module.h"
+#include "VM/VM.h"
+#include "VM/Value.h"
+#include <cstdint>
 #include <fstream>
-#include <math.h>
 #include <nlohmann/json.hpp>
 #include <print>
-#include <unistd.h>
-#include <utility>
-#include <variant>
 
 struct ArithmeticNaN
 {
@@ -34,7 +28,7 @@ struct ArithmeticNaN
             return std::isnan(value.get<double>());
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 };
 
@@ -58,7 +52,7 @@ struct CanonicalNaN
             return std::bit_cast<uint64_t>(value.get<double>()) == 0x7FF8000000000000 || std::bit_cast<uint64_t>(value.get<double>()) == 0xFFF8000000000000;
         }
 
-        UNREACHABLE();
+        std::unreachable();
     }
 };
 
@@ -75,7 +69,7 @@ static uint128_t getLane(uint128_t vector, uint8_t laneSize, uint8_t lane)
         case 64:
             return std::bit_cast<uint64x2_t>(vector)[lane];
         default:
-            UNREACHABLE();
+            std::unreachable();
     }
 }
 
@@ -115,12 +109,12 @@ struct TestVector
             {
                 if (laneSize == 32)
                 {
-                    if (std::get<ArithmeticNaN>(lanes[i]) != std::bit_cast<float32_t>(static_cast<uint32_t>(getLane(vector, laneSize, i))))
+                    if (std::get<ArithmeticNaN>(lanes[i]) != std::bit_cast<float>(static_cast<uint32_t>(getLane(vector, laneSize, i))))
                         return false;
                 }
                 else
                 {
-                    if (std::get<ArithmeticNaN>(lanes[i]) != std::bit_cast<float64_t>(static_cast<uint64_t>(getLane(vector, laneSize, i))))
+                    if (std::get<ArithmeticNaN>(lanes[i]) != std::bit_cast<double>(static_cast<uint64_t>(getLane(vector, laneSize, i))))
                         return false;
                 }
             }
@@ -128,12 +122,12 @@ struct TestVector
             {
                 if (laneSize == 32)
                 {
-                    if (std::get<CanonicalNaN>(lanes[i]) != std::bit_cast<float32_t>(static_cast<uint32_t>(getLane(vector, laneSize, i))))
+                    if (std::get<CanonicalNaN>(lanes[i]) != std::bit_cast<float>(static_cast<uint32_t>(getLane(vector, laneSize, i))))
                         return false;
                 }
                 else
                 {
-                    if (std::get<CanonicalNaN>(lanes[i]) != std::bit_cast<float64_t>(static_cast<uint64_t>(getLane(vector, laneSize, i))))
+                    if (std::get<CanonicalNaN>(lanes[i]) != std::bit_cast<double>(static_cast<uint64_t>(getLane(vector, laneSize, i))))
                         return false;
                 }
             }
@@ -170,7 +164,7 @@ public:
         if (std::holds_alternative<TestVector>(value))
             return std::get<TestVector>(value) == other;
 
-        UNREACHABLE();
+        std::unreachable();
     }
 
     Value get_value() const
@@ -179,7 +173,7 @@ public:
             return std::get<Value>(value);
         if (std::holds_alternative<TestVector>(value))
             return std::get<TestVector>(value).to_value();
-        UNREACHABLE();
+        std::unreachable();
     }
 
 private:
@@ -203,7 +197,7 @@ struct std::formatter<TestValue>
         if (std::holds_alternative<Value>(obj.value) || std::holds_alternative<TestVector>(obj.value))
             return std::format_to(ctx.out(), "{}", obj.get_value());
 
-        UNREACHABLE();
+        std::unreachable();
     }
 };
 
@@ -276,7 +270,7 @@ std::optional<TestValue> parse_value(nlohmann::json json)
     }
 }
 
-std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string& path, uint32_t line, nlohmann::json action)
+std::vector<Value> run_action(TestStats& stats, bool& failed, std::string_view path, uint32_t line, nlohmann::json action)
 {
     std::string actionType = action["type"];
     if (actionType == "invoke")
@@ -335,7 +329,7 @@ std::vector<Value> run_action(TestStats& stats, bool& failed, const std::string&
     }
 }
 
-TestStats run_tests(const std::string& path)
+TestStats run_tests(std::string_view path)
 {
     TestStats stats {};
 
@@ -361,7 +355,7 @@ TestStats run_tests(const std::string& path)
     }
 
     chdir("test_data/testsuite-processed");
-    chdir(path.c_str());
+    chdir(path.data());
 
     std::filesystem::path fsPath(path);
     std::ifstream f(fsPath.filename().string() + ".json");

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <SIMD.h>
-#include <Stream.h>
-#include <Util.h>
+#include "Stream/Stream.h"
+#include "Util/SIMD.h"
+#include <cstdint>
 
 enum class Type : uint8_t
 {

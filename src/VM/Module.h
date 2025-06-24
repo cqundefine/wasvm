@@ -1,11 +1,7 @@
 #pragma once
 
-#include <Parser.h>
-#include <Value.h>
-#include <WasmFile.h>
-#include <memory>
-#include <optional>
-#include <string_view>
+#include "Value.h"
+#include "WasmFile/WasmFile.h"
 
 class Function
 {

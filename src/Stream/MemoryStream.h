@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Stream.h>
+#include "Stream.h"
 #include <cstring>
 
 class MemoryStream : public Stream

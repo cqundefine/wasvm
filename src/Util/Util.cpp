@@ -1,6 +1,7 @@
-#include <FileStream.h>
-#include <Util.h>
-#include <cassert>
+#include "Util.h"
+#include "Stream/FileStream.h"
+#include <cstdlib>
+#include <ctime>
 #include <simdutf/simdutf.h>
 
 void fill_buffer_with_random_data(uint8_t* data, size_t size)
@@ -12,7 +13,7 @@ void fill_buffer_with_random_data(uint8_t* data, size_t size)
     randomStream.read(data, size);
 #else
     srand(time(nullptr));
-    for (size_t i = 0; i < buffer_size; i++)
+    for (size_t i = 0; i < size; i++)
         data[i] = rand() % 256;
 #endif
 }

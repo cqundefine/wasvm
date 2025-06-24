@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
+#include <string_view>
 
 struct TestStats
 {
@@ -13,4 +13,4 @@ struct TestStats
     uint32_t failed_to_load;
 };
 
-TestStats run_tests(const std::string& path);
+TestStats run_tests(std::string_view path);

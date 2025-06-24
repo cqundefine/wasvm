@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Trap.h>
+#include "VM/Trap.h"
+#include <algorithm>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -56,7 +58,7 @@ public:
     {
 #ifdef DEBUG_BUILD
         if (index + 1 > size())
-            std::println(std::cerr, "Error: Tried to get a stack element out of bounds");
+            throw Exception("Error: Tried to get a stack element out of bounds");
 #endif
         return m_stack[size() - index - 1];
     }
@@ -66,9 +68,14 @@ public:
         m_stack.erase(m_stack.begin() + fromBegin, m_stack.end() - fromEnd);
     }
 
-    constexpr uint32_t size() const
+    [[nodiscard]] constexpr uint32_t size() const
     {
         return static_cast<uint32_t>(m_stack.size());
+    }
+
+    [[nodiscard]] constexpr bool empty() const
+    {
+        return size() == 0;
     }
 
     constexpr void clear()

@@ -1,10 +1,8 @@
-#include "Proposals.h"
-#include "WasmFile.h"
-#include <Parser.h>
-#include <Util.h>
-#include <Value.h>
-#include <iostream>
-#include <stack>
+#include "Parser.h"
+#include "Util/Stack.h"
+#include "VM/Proposals.h"
+#include <cstdint>
+#include <utility>
 
 struct BlockBeginInfo
 {
@@ -16,7 +14,7 @@ struct BlockBeginInfo
 std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
 {
     std::vector<Instruction> instructions;
-    std::stack<BlockBeginInfo> blockBeginStack;
+    Stack<BlockBeginInfo> blockBeginStack;
 
     while (!stream.eof())
     {
@@ -62,13 +60,13 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             }
             case else_: {
                 if (blockBeginStack.empty())
-                    throw WasmFile::InvalidWASMException();
+                    throw WasmFile::InvalidWASMException("Invalid code");
 
-                auto begin = blockBeginStack.top();
+                auto begin = blockBeginStack.peek();
                 auto& beginInstruction = instructions[begin.begin];
 
-                if(!std::holds_alternative<IfArguments>(beginInstruction.arguments))
-                    throw WasmFile::InvalidWASMException();
+                if (!std::holds_alternative<IfArguments>(beginInstruction.arguments))
+                    throw WasmFile::InvalidWASMException("Invalid code");
                 beginInstruction.get_arguments<IfArguments>().elseLocation = instructions.size();
 
                 instructions.push_back(Instruction { .opcode = opcode });
@@ -80,8 +78,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 if (blockBeginStack.empty())
                     return instructions;
 
-                auto begin = blockBeginStack.top();
-                blockBeginStack.pop();
+                auto begin = blockBeginStack.pop();
                 auto& beginInstruction = instructions[begin.begin];
 
                 if (begin.isFake)
@@ -93,7 +90,9 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 };
 
                 if (std::holds_alternative<BlockLoopArguments>(beginInstruction.arguments))
+                {
                     std::get<BlockLoopArguments>(beginInstruction.arguments).label = label;
+                }
                 else if (std::holds_alternative<IfArguments>(beginInstruction.arguments))
                 {
                     IfArguments& arguments = std::get<IfArguments>(beginInstruction.arguments);
@@ -102,7 +101,9 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                         instructions[arguments.elseLocation.value()].arguments = label;
                 }
                 else
-                    UNREACHABLE();
+                {
+                    std::unreachable();
+                }
 
                 break;
             }
@@ -126,7 +127,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 else
                 {
                     if (stream.read_little_endian<uint8_t>() != 0)
-                        throw WasmFile::InvalidWASMException();
+                        throw WasmFile::InvalidWASMException("Invalid code");
                     instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint32_t>(0) });
                 }
                 break;
@@ -182,7 +183,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             case ref_null: {
                 Type type = static_cast<Type>(stream.read_little_endian<uint8_t>());
                 if (!is_reference_type(type))
-                    throw WasmFile::InvalidWASMException();
+                    throw WasmFile::InvalidWASMException("Invalid code");
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = type });
                 break;
             }
@@ -223,8 +224,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                         instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     default:
-                        std::println(std::cerr, "Error: Unknown opcode {:#x} {}", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
-                        throw WasmFile::InvalidWASMException();
+                        throw WasmFile::InvalidWASMException(std::format("Unknown opcode {:#x} {}", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte)));
                 }
                 break;
             }
@@ -487,8 +487,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                         instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     default:
-                        std::println(std::cerr, "Error: Unknown opcode {:#x} {}", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte));
-                        throw WasmFile::InvalidWASMException();
+                        throw WasmFile::InvalidWASMException(std::format("Unknown opcode {:#x} {}", static_cast<uint32_t>(opcode), static_cast<uint32_t>(secondByte)));
                 }
                 break;
             }
@@ -629,11 +628,10 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode });
                 break;
             default:
-                std::println(std::cerr, "Error: Unknown opcode {:#x}", static_cast<uint32_t>(opcode));
-                throw WasmFile::InvalidWASMException();
+                throw WasmFile::InvalidWASMException(std::format("Error: Unknown opcode {:#x}", static_cast<uint32_t>(opcode)));
         }
     }
 
     // We were supposed to break out of the loop on the last `end` instruction
-    throw WasmFile::InvalidWASMException();
+    throw WasmFile::InvalidWASMException("Invalid code");
 }

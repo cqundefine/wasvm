@@ -1,8 +1,6 @@
-#include "Util.h"
-#include <Type.h>
-#include <Value.h>
-#include <cassert>
-#include <format>
+#include "Value.h"
+#include "Type.h"
+#include <cmath>
 #include <utility>
 
 static bool float_equals(float a, float b)
@@ -48,5 +46,5 @@ bool Value::operator==(const Value& other) const
         return refA.index == refB.index;
     }
 
-    UNREACHABLE();
+    std::unreachable();
 }

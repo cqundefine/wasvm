@@ -1,16 +1,7 @@
-#include "Module.h"
-#include <Opcode.h>
-#include <Operators.h>
-#include <Parser.h>
-#include <SIMD.h>
-#include <Type.h>
-#include <Util.h>
-#include <VM.h>
-#include <Value.h>
-#include <WasmFile.h>
+#include "VM.h"
+#include "Operators.h"
+#include <cassert>
 #include <cstring>
-#include <limits>
-#include <print>
 
 Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 {

@@ -1,9 +1,8 @@
-#include <FileStream.h>
-#include <Proposals.h>
-#include <TestRunner.h>
-#include <Trap.h>
-#include <VM.h>
-#include <WasmFile.h>
+#include "Stream/FileStream.h"
+#include "TestRunner.h"
+#include "VM/Proposals.h"
+#include "VM/Trap.h"
+#include "VM/VM.h"
 #include <argparse/argparse.hpp>
 #include <nlohmann/json.hpp>
 #include <print>
@@ -97,11 +96,11 @@ int main(int argc, char** argv)
         }
         catch (const Trap& trap)
         {
-            std::println("Trapped ({})", trap.reason());
+            std::println(std::cerr, "Trapped ({})", trap.reason());
         }
         catch (const WasmFile::InvalidWASMException& e)
         {
-            std::println("Invalid WASM");
+            std::println(std::cerr, "Invalid WASM ({})", e.reason());
         }
         catch (...)
         {

@@ -1,16 +1,12 @@
-#include <Type.h>
-#include <Value.h>
-#include <WasmFile.h>
-#include <cassert>
-#include <cstdio>
-#include <iostream>
-#include <utility>
+#include "Type.h"
+#include "Value.h"
+#include "WasmFile/WasmFile.h"
 
 Type read_type_from_stream(Stream& stream)
 {
     Type type = static_cast<Type>(stream.read_leb<uint32_t>());
     if (!is_valid_type(type))
-        throw WasmFile::InvalidWASMException();
+        throw WasmFile::InvalidWASMException("Invalid type");
     return type;
 }
 

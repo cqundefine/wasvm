@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Module.h>
-#include <Parser.h>
-#include <Stream.h>
-#include <StringMap.h>
-#include <Util.h>
-#include <Value.h>
-#include <ValueStack.h>
-#include <WasmFile.h>
-#include <map>
+#include "Label.h"
+#include "Module.h"
+#include "Util/StringMap.h"
+#include "Util/Util.h"
+#include "Value.h"
+#include "ValueStack.h"
+#include "WasmFile/Parser.h"
+#include "WasmFile/WasmFile.h"
+#include <cstdint>
 #include <span>
+#include <vector>
 
 constexpr uint32_t WASM_PAGE_SIZE = 65536;
 constexpr uint32_t MAX_FRAME_STACK_SIZE = 1024;

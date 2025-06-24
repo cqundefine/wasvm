@@ -1,12 +1,7 @@
-#include <MemoryStream.h>
-#include <Opcode.h>
-#include <Parser.h>
-#include <Type.h>
-#include <Util.h>
-#include <Validator.h>
-#include <WasmFile.h>
-#include <iostream>
-#include <type_traits>
+#include "WasmFile.h"
+#include "Parser.h"
+#include "Stream/MemoryStream.h"
+#include "Validator.h"
 
 namespace WasmFile
 {
@@ -27,10 +22,10 @@ namespace WasmFile
         if (type == 0x01)
             max = stream.read_leb<uint32_t>();
         else if (type != 0x00)
-            throw InvalidWASMException();
+            throw InvalidWASMException("Invalid limits type");
 
         if (max && min > max)
-            throw InvalidWASMException();
+            throw InvalidWASMException("Invalid limits");
 
         return Limits {
             .min = min,
@@ -60,7 +55,7 @@ namespace WasmFile
     {
         uint8_t byte = stream.read_leb<uint8_t>();
         if (byte != 0x60)
-            throw InvalidWASMException();
+            throw InvalidWASMException("Invalid function type byte");
 
         std::vector<Type> params = stream.read_vec_with_function<Type, read_type_from_stream>();
         std::vector<Type> returns = stream.read_vec_with_function<Type, read_type_from_stream>();
@@ -106,7 +101,7 @@ namespace WasmFile
                 auto mut = (GlobalMutability)stream.read_little_endian<uint8_t>();
 
                 if (mut != GlobalMutability::Constant && mut != GlobalMutability::Variable)
-                    throw InvalidWASMException();
+                    throw InvalidWASMException("Invalid global mutability of import");
 
                 return Import {
                     .type = ImportType::Global,
@@ -117,8 +112,7 @@ namespace WasmFile
                 };
             }
             default:
-                std::println(std::cerr, "Error: Invalid import type: {}", type);
-                throw InvalidWASMException();
+                throw InvalidWASMException(std::format("Invalid import type: {}", type));
         }
     }
 
@@ -143,7 +137,7 @@ namespace WasmFile
         auto mut = (GlobalMutability)stream.read_little_endian<uint8_t>();
 
         if (mut != GlobalMutability::Constant && mut != GlobalMutability::Variable)
-            throw InvalidWASMException();
+            throw InvalidWASMException("Invalid global mutability");
 
         return Global {
             .type = type,
@@ -166,7 +160,7 @@ namespace WasmFile
         uint32_t type = stream.read_leb<uint32_t>();
 
         if (type > 0x07)
-            throw InvalidWASMException();
+            throw InvalidWASMException("Invalid element type");
 
         bool is_passive_or_declarative = type & 0b1;
         bool has_table_index = type & 0b10;
@@ -195,12 +189,12 @@ namespace WasmFile
             {
                 element.valueType = (Type)stream.read_leb<uint8_t>();
                 if (!is_reference_type(element.valueType))
-                    throw InvalidWASMException();
+                    throw InvalidWASMException("Invalid element reference type");
             }
             else
             {
                 if (stream.read_leb<uint8_t>() != 0)
-                    throw InvalidWASMException();
+                    throw InvalidWASMException("Invalid element byte");
             }
         }
 
@@ -232,7 +226,7 @@ namespace WasmFile
             count += local.count;
 
         if (count > UINT32_MAX)
-            throw InvalidWASMException();
+            throw InvalidWASMException("Too many locals");
 
         std::vector<Type> localTypes;
         for (const auto& local : locals)
@@ -275,8 +269,7 @@ namespace WasmFile
                     .mode = ElementMode::Active,
                 };
             default:
-                std::println(std::cerr, "Unsupported data type: {}", type);
-                throw InvalidWASMException();
+                throw InvalidWASMException(std::format("Unsupported data type: {}", type));
         }
     }
 
@@ -291,13 +284,10 @@ namespace WasmFile
             uint32_t version = stream.read_little_endian<uint32_t>();
 
             if (signature != WASM_SIGNATURE)
-            {
-                std::println(std::cerr, "Not a WASM file!");
-                throw InvalidWASMException();
-            }
+                throw InvalidWASMException("Not a WASM file!");
 
             if (version != 1)
-                throw InvalidWASMException();
+                throw InvalidWASMException("Invalid WASM version");
 
             std::vector<Section> foundSections;
 
@@ -307,7 +297,7 @@ namespace WasmFile
                 uint32_t size = stream.read_leb<uint32_t>();
 
                 if (tag != Section::Custom && vector_contains(foundSections, tag))
-                    throw InvalidWASMException();
+                    throw InvalidWASMException("Duplicate sections");
                 foundSections.push_back(tag);
 
                 std::vector<uint8_t> section(size);
@@ -358,20 +348,19 @@ namespace WasmFile
                         break;
                     }
                     default:
-                        std::println(std::cerr, "Warning: Unknown section: {}", static_cast<int>(tag));
-                        throw InvalidWASMException();
+                        throw InvalidWASMException(std::format("Unknown section: {}", static_cast<int>(tag)));
                 }
 
                 if (!sectionStream.eof())
-                    throw InvalidWASMException();
+                    throw InvalidWASMException("Extra data at the end of a section");
             }
 
             if (wasm->functionTypeIndexes.size() != wasm->codeBlocks.size())
-                throw InvalidWASMException();
+                throw InvalidWASMException("Function count doesnt match code count");
 
             if (wasm->dataCount)
                 if (wasm->dataBlocks.size() != wasm->dataCount)
-                    throw InvalidWASMException();
+                    throw InvalidWASMException("Data counts do not match");
 
             s_currentWasmFile = nullptr;
 
@@ -382,7 +371,7 @@ namespace WasmFile
         }
         catch (StreamReadException e)
         {
-            throw InvalidWASMException();
+            throw InvalidWASMException("Stream read failed");
         }
     }
 
@@ -428,10 +417,7 @@ namespace WasmFile
             return {};
 
         if (index >= wasmFile->functionTypes.size())
-        {
-            std::println(std::cerr, "Error: Invalid block type index: {}", index);
-            throw InvalidWASMException();
-        }
+            throw InvalidWASMException(std::format("Invalid block type index: {}", index));
 
         const auto& functionType = wasmFile->functionTypes[index];
         return functionType.params;
@@ -448,10 +434,7 @@ namespace WasmFile
         }
 
         if (index >= wasmFile->functionTypes.size())
-        {
-            std::println(std::cerr, "Error: Invalid block type index: {}", index);
-            throw InvalidWASMException();
-        }
+            throw InvalidWASMException(std::format("Invalid block type index: {}", index));
 
         const auto& functionType = wasmFile->functionTypes[index];
         return functionType.returns;

@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Stream.h>
-#include <Type.h>
-#include <Util.h>
-#include <exception>
+#include "Stream/Stream.h"
+#include "VM/Type.h"
+#include <cstdint>
 #include <optional>
-#include <vector>
 
 struct Instruction;
 
@@ -31,12 +29,18 @@ namespace WasmFile
         DataCount = 12,
     };
 
-    struct InvalidWASMException : public std::exception
+    class InvalidWASMException
     {
-        const char* what() const throw()
+    public:
+        InvalidWASMException(std::string_view reason)
+            : m_reason(reason)
         {
-            return "InvalidWASMException";
         }
+
+        std::string_view reason() const { return m_reason; }
+
+    private:
+        std::string m_reason;
     };
 
     struct Limits

@@ -1,15 +1,7 @@
 #pragma once
 
-#include <algorithm>
-#include <bits/floatn-common.h>
-#include <cassert>
 #include <cmath>
-#include <cstdint>
-#include <iostream>
 #include <memory>
-#include <sys/time.h>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
 #if defined(__linux__)
@@ -26,16 +18,6 @@
 #else
     #define LIBC_GLIBC_VERSION(maj, min) 0
 #endif
-
-#if !defined(NDEBUG)
-    #define DEBUG_BUILD
-#endif
-
-#define UNREACHABLE()                                                \
-    {                                                                \
-        assert(false); /* NOLINT(cert-dcl03-c,misc-static-assert) */ \
-        std::unreachable();                                          \
-    }
 
 template <typename T>
 using Own = std::unique_ptr<T>;
@@ -159,9 +141,3 @@ constexpr T nan_max(T a, T b)
     }
     return (a > b) ? a : b;
 }
-
-using float32_t = float;
-using float64_t = double;
-
-using int128_t = __int128;
-using uint128_t = unsigned __int128;

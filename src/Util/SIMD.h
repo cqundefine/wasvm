@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Util.h>
 #include <cmath>
+#include <cstdint>
 
 #ifdef ARCH_X86_64
     #include <immintrin.h>
     #include <smmintrin.h>
 #endif
+
+using int128_t = __int128;
+using uint128_t = unsigned __int128;
 
 using int8x2_t = int8_t __attribute__((vector_size(2)));
 using int8x4_t = int8_t __attribute__((vector_size(4)));
@@ -37,10 +40,10 @@ using uint32x4_t = uint32_t __attribute__((vector_size(16)));
 
 using uint64x2_t = uint64_t __attribute__((vector_size(16)));
 
-using float32x2_t = float32_t __attribute__((vector_size(8)));
-using float32x4_t = float32_t __attribute__((vector_size(16)));
+using float32x2_t = float __attribute__((vector_size(8)));
+using float32x4_t = float __attribute__((vector_size(16)));
 
-using float64x2_t = float64_t __attribute__((vector_size(16)));
+using float64x2_t = double __attribute__((vector_size(16)));
 
 template <typename T>
 concept IsVector = requires(T a) {
