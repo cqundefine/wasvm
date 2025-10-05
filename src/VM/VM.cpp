@@ -1,8 +1,14 @@
 #include "VM.h"
 #include "Operators.h"
 #include "Util/Util.h"
+#include "VM/Module.h"
+#include "VM/Type.h"
+#include "VM/Value.h"
+#include "WasmFile/Opcode.h"
+#include "WasmFile/Validator.h"
 #include <cassert>
 #include <cstring>
+#include <utility>
 
 Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_current)
 {
@@ -65,11 +71,10 @@ Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_cur
     {
         if (element.mode == WasmFile::ElementMode::Active)
         {
-            Value beginValue = run_bare_code(new_module, element.expr);
-            assert(beginValue.holds_alternative<uint32_t>());
-            uint32_t begin = beginValue.get<uint32_t>();
-
             const auto table = new_module->get_table(element.table);
+
+            Value beginValue = run_bare_code(new_module, element.expr);
+            uint64_t begin = table->address_type() == AddressType::i64 ? beginValue.get<uint64_t>() : beginValue.get<uint32_t>();
 
             size_t size = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
 
@@ -81,7 +86,6 @@ Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_cur
                 if (element.functionIndexes.empty())
                 {
                     Value reference = run_bare_code(new_module, element.referencesExpr[i]);
-                    assert(reference.holds_alternative<Reference>());
                     table->set(begin + i, reference.get<Reference>());
                 }
                 else
@@ -99,13 +103,12 @@ Ref<RealModule> VM::load_module(Ref<WasmFile::WasmFile> file, bool dont_make_cur
     {
         if (data.mode == WasmFile::ElementMode::Active)
         {
-            Value beginValue = run_bare_code(new_module, data.expr);
-            assert(beginValue.holds_alternative<uint32_t>());
-            uint32_t begin = beginValue.get<uint32_t>();
-
             const auto* memory = new_module->get_memory(data.memoryIndex);
 
-            if (begin + data.data.size() > memory->size() * WASM_PAGE_SIZE)
+            Value beginValue = run_bare_code(new_module, data.expr);
+            uint64_t begin = memory->address_type() == AddressType::i64 ? beginValue.get<uint64_t>() : beginValue.get<uint32_t>();
+
+            if (memory->check_outside_bounds(begin, data.data.size()))
                 throw Trap("Out of bounds data");
 
             memcpy(memory->data() + begin, data.data.data(), data.data.size());
@@ -226,9 +229,9 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
             case call_indirect: {
                 const auto& arguments = instruction.get_arguments<CallIndirectArguments>();
 
-                uint32_t index = m_frame->stack.pop_as<uint32_t>();
+                const auto* table = mod->get_table(arguments.tableIndex);
+                uint64_t index = pop_address(table);
 
-                const auto table = mod->get_table(arguments.tableIndex);
                 const auto reference = table->get(index);
 
                 if (!reference.index)
@@ -278,18 +281,18 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 break;
 
             case table_get: {
-                const auto index = m_frame->stack.pop_as<uint32_t>();
-
                 const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
+
+                const auto index = pop_address(table);
 
                 m_frame->stack.push(table->get(index));
                 break;
             }
             case table_set: {
-                const auto value = m_frame->stack.pop_as<Reference>();
-                const auto index = m_frame->stack.pop_as<uint32_t>();
-
                 const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
+
+                const auto value = m_frame->stack.pop_as<Reference>();
+                const auto index = pop_address(table);
 
                 table->set(index, value);
                 break;
@@ -309,21 +312,24 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 ENUMERATE_STORE_OPERATIONS(X)
 #undef X
 
-            case memory_size:
-                m_frame->stack.push(mod->get_memory(instruction.get_arguments<uint32_t>())->size());
+            case memory_size: {
+                const auto* memory = mod->get_memory(instruction.get_arguments<uint32_t>());
+                m_frame->stack.push(to_address(memory->size(), memory));
                 break;
+            }
             case memory_grow: {
                 auto* memory = mod->get_memory(instruction.get_arguments<uint32_t>());
 
-                uint32_t addPages = m_frame->stack.pop_as<uint32_t>();
+                uint64_t addPages = pop_address(memory);
 
-                if (memory->size() + addPages > (memory->max() ? *memory->max() : WasmFile::MAX_WASM_PAGES))
+                auto max_pages = memory->address_type() == AddressType::i64 ? Validator::MAX_WASM_PAGES_I64 : Validator::MAX_WASM_PAGES_I32;
+                if (memory->size() + addPages > (memory->max() ? *memory->max() : max_pages))
                 {
-                    m_frame->stack.push((uint32_t)-1);
+                    m_frame->stack.push(to_address(-1, memory));
                     break;
                 }
 
-                m_frame->stack.push(memory->size());
+                m_frame->stack.push(to_address(memory->size(), memory));
                 memory->grow(addPages);
                 break;
             }
@@ -369,16 +375,16 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 const auto& arguments = instruction.get_arguments<MemoryInitArguments>();
                 const auto* memory = mod->get_memory(arguments.memoryIndex);
 
-                uint32_t count = m_frame->stack.pop_as<uint32_t>();
-                uint32_t source = m_frame->stack.pop_as<uint32_t>();
-                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+                uint64_t count = pop_address(memory);
+                uint64_t source = pop_address(memory);
+                uint64_t destination = pop_address(memory);
 
                 const auto& data = mod->wasm_file()->dataBlocks[arguments.dataIndex];
 
                 if (static_cast<uint64_t>(source) + count > data.data.size())
                     throw Trap("Out of bounds memory init");
 
-                if (static_cast<uint64_t>(destination) + count > memory->size() * WASM_PAGE_SIZE)
+                if (memory->check_outside_bounds(destination, count))
                     throw Trap("Out of bounds memory init");
 
                 memcpy(memory->data() + destination, data.data.data() + source, count);
@@ -392,45 +398,47 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 const auto* sourceMemory = mod->get_memory(arguments.source);
                 const auto* destinationMemory = mod->get_memory(arguments.destination);
 
-                uint32_t count = m_frame->stack.pop_as<uint32_t>();
-                uint32_t source = m_frame->stack.pop_as<uint32_t>();
-                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+                const bool is_count64 = destinationMemory->address_type() == AddressType::i64 && sourceMemory->address_type() == AddressType::i64;
+                uint64_t count = is_count64 ? m_frame->stack.pop_as<uint64_t>() : m_frame->stack.pop_as<uint32_t>();
 
-                if (static_cast<uint64_t>(source) + count > sourceMemory->size() * WASM_PAGE_SIZE || static_cast<uint64_t>(destination) + count > destinationMemory->size() * WASM_PAGE_SIZE)
+                uint64_t source = pop_address(sourceMemory);
+                uint64_t destination = pop_address(destinationMemory);
+
+                if (sourceMemory->check_outside_bounds(source, count) || destinationMemory->check_outside_bounds(destination, count))
                     throw Trap("Out of bounds memory copy");
 
                 if (count == 0)
                     break;
 
                 if (destination <= source)
-                    for (uint32_t i = 0; i < count; i++)
+                    for (uint64_t i = 0; i < count; i++)
                         destinationMemory->data()[destination + i] = sourceMemory->data()[source + i];
                 else
-                    for (uint32_t i = count; i > 0; i--)
+                    for (uint64_t i = count; i > 0; i--)
                         destinationMemory->data()[destination + i - 1] = sourceMemory->data()[source + i - 1];
                 break;
             }
             case memory_fill: {
                 const auto* memory = mod->get_memory(instruction.get_arguments<uint32_t>());
 
-                uint32_t count = m_frame->stack.pop_as<uint32_t>();
-                uint32_t val = m_frame->stack.pop_as<uint32_t>();
-                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+                uint64_t count = pop_address(memory);
+                uint32_t value = m_frame->stack.pop_as<uint32_t>();
+                uint64_t destination = pop_address(memory);
 
-                if (static_cast<uint64_t>(destination) + count > memory->size() * WASM_PAGE_SIZE)
+                if (memory->check_outside_bounds(destination, count))
                     throw Trap("Out of bounds memory fill");
 
-                memset(memory->data() + destination, val, count);
+                memset(memory->data() + destination, value, count);
                 break;
             }
 
             case table_init: {
                 const auto& arguments = instruction.get_arguments<TableInitArguments>();
-                uint32_t count = m_frame->stack.pop_as<uint32_t>();
-                uint32_t source = m_frame->stack.pop_as<uint32_t>();
-                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+                auto* table = mod->get_table(arguments.tableIndex);
 
-                const auto table = mod->get_table(arguments.tableIndex);
+                auto count = m_frame->stack.pop_as<uint32_t>();
+                auto source = m_frame->stack.pop_as<uint32_t>();
+                auto destination = pop_address(table);
 
                 const auto& element = mod->wasm_file()->elements[arguments.elementIndex];
                 size_t elemSize = element.functionIndexes.empty() ? element.referencesExpr.size() : element.functionIndexes.size();
@@ -443,7 +451,6 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                     if (element.functionIndexes.empty())
                     {
                         Value reference = run_bare_code(mod, element.referencesExpr[source + i]);
-                        assert(reference.holds_alternative<Reference>());
                         table->unsafe_set(destination + i, reference.get<Reference>());
                     }
                     else
@@ -456,14 +463,16 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 break;
             case table_copy: {
                 const auto& arguments = instruction.get_arguments<TableCopyArguments>();
-                uint32_t count = m_frame->stack.pop_as<uint32_t>();
-                uint32_t source = m_frame->stack.pop_as<uint32_t>();
-                uint32_t destination = m_frame->stack.pop_as<uint32_t>();
+                const auto* sourceTable = mod->get_table(arguments.source);
+                auto* destinationTable = mod->get_table(arguments.destination);
 
-                const auto destinationTable = mod->get_table(arguments.destination);
-                const auto sourceTable = mod->get_table(arguments.source);
+                const bool is_count64 = destinationTable->address_type() == AddressType::i64 && sourceTable->address_type() == AddressType::i64;
+                auto count = is_count64 ? m_frame->stack.pop_as<uint64_t>() : m_frame->stack.pop_as<uint32_t>();
 
-                if (static_cast<uint64_t>(source) + count > sourceTable->size() || static_cast<uint64_t>(destination) + count > destinationTable->size())
+                auto source = pop_address(sourceTable);
+                auto destination = pop_address(destinationTable);
+
+                if (source + count > sourceTable->size() || destination + count > destinationTable->size())
                     throw Trap("Out of bounds table copy");
 
                 if (count == 0)
@@ -482,33 +491,33 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 break;
             }
             case table_grow: {
-                uint32_t addEntries = m_frame->stack.pop_as<uint32_t>();
+                auto* table = mod->get_table(instruction.get_arguments<uint32_t>());
 
-                const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
-                uint32_t oldSize = table->size();
+                auto addEntries = pop_address(table);
+                auto value = m_frame->stack.pop_as<Reference>();
 
-                Reference value = m_frame->stack.pop_as<Reference>();
-
-                if (static_cast<uint64_t>(table->size()) + addEntries > (table->max() ? *table->max() : UINT32_MAX))
+                if (table->size() + addEntries > (table->max() ? *table->max() : UINT32_MAX))
                 {
-                    m_frame->stack.push((uint32_t)-1);
+                    m_frame->stack.push(to_address(-1, table));
                     break;
                 }
 
-                m_frame->stack.push(oldSize);
+                m_frame->stack.push(to_address(table->size(), table));
                 table->grow(addEntries, value);
 
                 break;
             }
-            case table_size:
-                m_frame->stack.push(mod->get_table(instruction.get_arguments<uint32_t>())->size());
+            case table_size: {
+                const auto* table = mod->get_table(instruction.get_arguments<uint32_t>());
+                m_frame->stack.push(to_address(table->size(), table));
                 break;
+            }
             case table_fill: {
-                auto count = m_frame->stack.pop_as<uint32_t>();
-                auto value = m_frame->stack.pop_as<Reference>();
-                auto destination = m_frame->stack.pop_as<uint32_t>();
+                auto* table = mod->get_table(instruction.get_arguments<uint32_t>());
 
-                const auto table = mod->get_table(instruction.get_arguments<uint32_t>());
+                auto count = pop_address(table);
+                auto value = m_frame->stack.pop_as<Reference>();
+                auto destination = pop_address(table);
 
                 if (destination + count > table->size())
                     throw Trap("Out of bounds table fill");
@@ -675,6 +684,12 @@ Value VM::run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instru
 {
     ValueStack stack;
 
+    const auto run_binary_operation = [&stack]<IsValueType T, typename Op>(Op op) {
+        const auto rhs = stack.pop_as<T>();
+        const auto lhs = stack.pop_as<T>();
+        stack.push(op(lhs, rhs));
+    };
+
     for (const auto& instruction : instructions)
     {
         switch (instruction.opcode)
@@ -697,24 +712,23 @@ Value VM::run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instru
             case f64_const:
                 stack.push(instruction.get_arguments<double>());
                 break;
-            // NOTE: We don't check if extended const is enabled, because it would've failed at the validator stage
             case i32_add:
-                stack.push(stack.pop_as<uint32_t>() + stack.pop_as<uint32_t>());
+                run_binary_operation.operator()<uint32_t>([](auto lhs, auto rhs) { return lhs + rhs; });
                 break;
             case i32_sub:
-                stack.push(stack.pop_as<uint32_t>() - stack.pop_as<uint32_t>());
+                run_binary_operation.operator()<uint32_t>([](auto lhs, auto rhs) { return lhs - rhs; });
                 break;
             case i32_mul:
-                stack.push(stack.pop_as<uint32_t>() * stack.pop_as<uint32_t>());
+                run_binary_operation.operator()<uint32_t>([](auto lhs, auto rhs) { return lhs * rhs; });
                 break;
             case i64_add:
-                stack.push(stack.pop_as<uint64_t>() + stack.pop_as<uint64_t>());
+                run_binary_operation.operator()<uint64_t>([](auto lhs, auto rhs) { return lhs + rhs; });
                 break;
             case i64_sub:
-                stack.push(stack.pop_as<uint64_t>() - stack.pop_as<uint64_t>());
+                run_binary_operation.operator()<uint64_t>([](auto lhs, auto rhs) { return lhs - rhs; });
                 break;
             case i64_mul:
-                stack.push(stack.pop_as<uint64_t>() * stack.pop_as<uint64_t>());
+                run_binary_operation.operator()<uint64_t>([](auto lhs, auto rhs) { return lhs * rhs; });
                 break;
             case ref_null:
                 stack.push(default_value_for_type(instruction.get_arguments<Type>()));
@@ -740,6 +754,7 @@ Value VM::run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instru
 
 Memory* VM::get_current_frame_memory_0()
 {
+    // FIXME: Verify there is a memory 0
     return m_frame->mod->get_memory(0);
 }
 
@@ -764,14 +779,14 @@ RELEASE_INLINE void VM::run_unary_operation()
     m_frame->stack.push(function(a));
 }
 
-template <typename ActualType, typename StackType>
+template <typename ActualType, IsValueType StackType>
 RELEASE_INLINE void VM::run_load_instruction(const WasmFile::MemArg& memArg)
 {
-    const auto* memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(memArg.memory_index);
 
-    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+    uint64_t address = pop_address(memory);
 
-    if (static_cast<uint64_t>(address) + memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
+    if (memory->check_outside_bounds(address, memArg.offset + sizeof(ActualType)))
         throw Trap("Out of bounds load");
 
     ActualType value;
@@ -783,15 +798,15 @@ RELEASE_INLINE void VM::run_load_instruction(const WasmFile::MemArg& memArg)
         m_frame->stack.push(static_cast<StackType>(value));
 }
 
-template <typename ActualType, typename StackType>
+template <typename ActualType, IsValueType StackType>
 RELEASE_INLINE void VM::run_store_instruction(const WasmFile::MemArg& memArg)
 {
-    const auto* memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(memArg.memory_index);
 
     ActualType value = static_cast<ActualType>(m_frame->stack.pop_as<StackType>());
-    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+    uint64_t address = pop_address(memory);
 
-    if (static_cast<uint64_t>(address) + memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
+    if (memory->check_outside_bounds(address, memArg.offset + sizeof(ActualType)))
         throw Trap("Out of bounds store");
 
     memcpy(&memory->data()[address + memArg.offset], &value, sizeof(ActualType));
@@ -813,11 +828,11 @@ void VM::call_function(Ref<Function> function)
 template <IsVector VectorType, bool Zero>
 void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
 {
-    const auto* memory = m_frame->mod->get_memory(memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(memArg.memory_index);
 
-    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+    auto address = pop_address(memory);
 
-    if (static_cast<uint64_t>(address) + memArg.offset + sizeof(VectorElement<VectorType>) > memory->size() * WASM_PAGE_SIZE)
+    if (memory->check_outside_bounds(address, memArg.offset + sizeof(VectorElement<VectorType>)))
         throw Trap("Out of bounds load");
 
     VectorElement<VectorType> value {};
@@ -836,12 +851,12 @@ void VM::run_load_vector_element_instruction(const WasmFile::MemArg& memArg)
 template <IsVector VectorType, typename ActualType, typename LaneType>
 void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
 {
-    const auto* memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(args.memArg.memory_index);
 
-    VectorType vector = m_frame->stack.pop_as<VectorType>();
-    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+    auto vector = m_frame->stack.pop_as<VectorType>();
+    auto address = pop_address(memory);
 
-    if (static_cast<uint64_t>(address) + args.memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
+    if (memory->check_outside_bounds(address, args.memArg.offset + sizeof(ActualType)))
         throw Trap("Out of bounds load");
 
     ActualType value;
@@ -854,16 +869,47 @@ void VM::run_load_lane_instruction(const LoadStoreLaneArguments& args)
 template <IsVector VectorType, typename ActualType, typename StackType>
 void VM::run_store_lane_instruction(const LoadStoreLaneArguments& args)
 {
-    const auto* memory = m_frame->mod->get_memory(args.memArg.memoryIndex);
+    const auto* memory = m_frame->mod->get_memory(args.memArg.memory_index);
 
-    VectorType vector = m_frame->stack.pop_as<VectorType>();
-    uint32_t address = m_frame->stack.pop_as<uint32_t>();
+    auto vector = m_frame->stack.pop_as<VectorType>();
+    auto address = pop_address(memory);
 
-    if (static_cast<uint64_t>(address) + args.memArg.offset + sizeof(ActualType) > memory->size() * WASM_PAGE_SIZE)
+    if (memory->check_outside_bounds(address, args.memArg.offset + sizeof(ActualType)))
         throw Trap("Out of bounds store");
 
     ActualType value = vector[args.lane];
     memcpy(&memory->data()[address + args.memArg.offset], &value, sizeof(ActualType));
+}
+
+template <HasAddressType Structure>
+uint64_t VM::pop_address(const Structure* structure)
+{
+    switch (structure->address_type())
+    {
+        using enum AddressType;
+        case i32:
+            return m_frame->stack.pop_as<uint32_t>();
+        case i64:
+            return m_frame->stack.pop_as<uint64_t>();
+        default:
+            std::unreachable();
+    }
+}
+
+template <HasAddressType Structure>
+Value VM::to_address(uint64_t value, const Structure* structure)
+{
+    switch (structure->address_type())
+    {
+        using enum AddressType;
+        case i32:
+            // FIXME: maybe add a debug check if the cast doesnt lose data
+            return static_cast<uint32_t>(value);
+        case i64:
+            return value;
+        default:
+            std::unreachable();
+    }
 }
 
 VM::ImportLocation VM::find_import(std::string_view environment, std::string_view name, WasmFile::ImportType type)

@@ -1,6 +1,7 @@
 #include "Type.h"
 #include "Value.h"
 #include "WasmFile/WasmFile.h"
+#include <utility>
 
 Type read_type_from_stream(Stream& stream)
 {
@@ -74,4 +75,18 @@ std::string get_type_name(Type type)
 bool is_reference_type(Type type)
 {
     return type == Type::externref || type == Type::funcref;
+}
+
+Type type_from_address_type(AddressType addressType)
+{
+    switch (addressType)
+    {
+        using enum AddressType;
+        case i32:
+            return Type::i32;
+        case i64:
+            return Type::i64;
+        default:
+            std::unreachable();
+    }
 }

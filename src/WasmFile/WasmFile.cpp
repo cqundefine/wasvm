@@ -16,13 +16,17 @@ namespace WasmFile
     {
         uint8_t type = stream.read_little_endian<uint8_t>();
 
-        uint32_t min = stream.read_leb<uint32_t>();
-        std::optional<uint32_t> max;
+        uint64_t min = stream.read_leb<uint64_t>();
+        std::optional<uint64_t> max;
 
-        if (type == 0x01)
-            max = stream.read_leb<uint32_t>();
-        else if (type != 0x00)
+        if (type != 0x00 && type != 0x01 && type != 0x04 && type != 0x05)
             throw InvalidWASMException("Invalid limits type");
+
+        bool has_max = type & 0b001;
+        bool addr64 = type & 0b100;
+
+        if (has_max)
+            max = stream.read_leb<uint64_t>();
 
         if (max && min > max)
             throw InvalidWASMException("Invalid limits");
@@ -30,24 +34,30 @@ namespace WasmFile
         return Limits {
             .min = min,
             .max = max,
+            .address_type = addr64 ? AddressType::i64 : AddressType::i32,
         };
+    }
+
+    bool Limits::fits_within(const Limits& other) const
+    {
+        return min >= other.min && (!other.max.has_value() || (max.has_value() && max.value() <= other.max.value())) && address_type == other.address_type;
     }
 
     MemArg MemArg::read_from_stream(Stream& stream)
     {
         uint32_t align = stream.read_leb<uint32_t>();
 
-        uint32_t memoryIndex = 0;
+        uint32_t memory_index = 0;
         if ((align & 0x40) != 0)
         {
             align &= ~0x40;
-            memoryIndex = stream.read_leb<uint32_t>();
+            memory_index = stream.read_leb<uint32_t>();
         }
 
         return MemArg {
             .align = align,
-            .offset = stream.read_leb<uint32_t>(),
-            .memoryIndex = memoryIndex,
+            .offset = stream.read_leb<uint64_t>(),
+            .memory_index = memory_index,
         };
     }
 

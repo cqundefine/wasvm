@@ -1,6 +1,6 @@
 #include "Parser.h"
+#include "Opcode.h"
 #include "Util/Stack.h"
-#include "VM/Proposals.h"
 #include <cstdint>
 #include <utility>
 
@@ -122,14 +122,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 break;
             case memory_size:
             case memory_grow:
-                if (g_enable_multi_memory)
-                    instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_leb<uint32_t>() });
-                else
-                {
-                    if (stream.read_little_endian<uint8_t>() != 0)
-                        throw WasmFile::InvalidWASMException("Invalid code");
-                    instructions.push_back(Instruction { .opcode = opcode, .arguments = static_cast<uint32_t>(0) });
-                }
+                instructions.push_back(Instruction { .opcode = opcode, .arguments = stream.read_leb<uint32_t>() });
                 break;
             case br_table:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = BranchTableArgumentsPrevalidated { .labels = stream.read_vec<uint32_t>(), .defaultLabel = stream.read_leb<uint32_t>() } });
@@ -189,7 +182,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             }
             case multi_byte_fc: {
                 MultiByteFC secondByte = static_cast<MultiByteFC>(stream.read_leb<uint32_t>());
-                Opcode realOpcode = static_cast<Opcode>(((static_cast<uint32_t>(opcode)) << 8) | static_cast<uint32_t>(secondByte));
+                Opcode realOpcode = static_cast<Opcode>(((static_cast<uint32_t>(opcode)) << 16) | static_cast<uint32_t>(secondByte));
                 switch (secondByte)
                 {
                     using enum MultiByteFC;
@@ -230,7 +223,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             }
             case multi_byte_fd: {
                 MultiByteFD secondByte = static_cast<MultiByteFD>(stream.read_leb<uint32_t>());
-                Opcode realOpcode = static_cast<Opcode>(((static_cast<uint32_t>(opcode)) << 8) | static_cast<uint32_t>(secondByte));
+                Opcode realOpcode = static_cast<Opcode>(((static_cast<uint32_t>(opcode)) << 16) | static_cast<uint32_t>(secondByte));
                 switch (secondByte)
                 {
                     using enum MultiByteFD;
@@ -484,6 +477,26 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                     case i32x4_trunc_sat_f64x2_u_zero:
                     case f64x2_convert_low_i32x4_s:
                     case f64x2_convert_low_i32x4_u:
+                    case i8x16_relaxed_swizzle:
+                    case i32x4_relaxed_trunc_f32x4_s:
+                    case i32x4_relaxed_trunc_f32x4_u:
+                    case i32x4_relaxed_trunc_f64x2_s_zero:
+                    case i32x4_relaxed_trunc_f64x2_u_zero:
+                    case f32x4_relaxed_madd:
+                    case f32x4_relaxed_nmadd:
+                    case f64x2_relaxed_madd:
+                    case f64x2_relaxed_nmadd:
+                    case i8x16_relaxed_laneselect:
+                    case i16x8_relaxed_laneselect:
+                    case i32x4_relaxed_laneselect:
+                    case i64x2_relaxed_laneselect:
+                    case f32x4_relaxed_min:
+                    case f32x4_relaxed_max:
+                    case f64x2_relaxed_min:
+                    case f64x2_relaxed_max:
+                    case i16x8_relaxed_q15mulr_s:
+                    case i16x8_relaxed_dot_i8x16_i7x16_s:
+                    case i32x4_relaxed_dot_i8x16_i7x16_add_s:
                         instructions.push_back(Instruction { .opcode = realOpcode });
                         break;
                     default:

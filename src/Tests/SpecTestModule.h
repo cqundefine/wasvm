@@ -13,6 +13,7 @@ public:
 private:
     StringMap<Ref<Global>> m_globals;
     Ref<Table> m_table;
+    Ref<Table> m_table64;
     Ref<Memory> m_memory;
     StringMap<Ref<Function>> m_functions;
 };

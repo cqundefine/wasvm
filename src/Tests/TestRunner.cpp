@@ -294,6 +294,33 @@ static std::optional<TestValue> parse_value(nlohmann::json json)
     }
 }
 
+static std::optional<std::vector<TestValue>> parse_expected(nlohmann::json json)
+{
+    if (json["type"] == "either")
+    {
+        auto values = json["values"];
+        std::vector<TestValue> either;
+
+        for (const auto& value : values)
+        {
+            auto maybe_value = parse_value(value);
+            if (!maybe_value.has_value())
+                return {};
+
+            either.push_back(maybe_value.value());
+        }
+
+        return either;
+    }
+
+    auto maybe_value = parse_value(json);
+
+    if (maybe_value.has_value())
+        return std::vector { maybe_value.value() };
+
+    return {};
+}
+
 static std::vector<Value> run_action(TestStats& stats, bool& failed, std::string_view path, uint32_t line, nlohmann::json action)
 {
     std::string actionType = action["type"];
@@ -357,9 +384,9 @@ TestStats run_tests(std::string_view path)
 {
     TestStats stats {};
 
-    if (path == "linking")
+    if (path == "select" || path.starts_with("linking") || path.starts_with("imports"))
     {
-        std::println("linking tests are not supported yet");
+        std::println("linking and imports and select tests are not supported yet");
         stats.total = 1;
         stats.failed = 1;
         return stats;
@@ -393,7 +420,7 @@ TestStats run_tests(std::string_view path)
                 VM::load_module(file);
                 if (command.contains("name"))
                     VM::register_module(command["name"], VM::current_module());
-                std::println("{}/{} module loaded", path, line);
+                std::println("{}/{} module instantiated", path, line);
                 module_loaded = true;
                 stats.passed++;
             }
@@ -406,6 +433,27 @@ TestStats run_tests(std::string_view path)
             catch (Trap e)
             {
                 std::println("{}/{} module failed to load: Trapped ({})", path, line, e.reason());
+                module_loaded = false;
+                stats.failed_to_load++;
+            }
+        }
+        else if (type == "module_definition")
+        {
+            stats.total++;
+
+            std::string binary_module_path = command.contains("binary_filename") ? command["binary_filename"] : command["filename"];
+            FileStream fileStream(binary_module_path);
+
+            try
+            {
+                auto file = WasmFile::WasmFile::read_from_stream(fileStream);
+                std::println("{}/{} module loaded", path, line);
+                module_loaded = true;
+                stats.passed++;
+            }
+            catch (WasmFile::InvalidWASMException e)
+            {
+                std::println("{}/{} module failed to load: Invalid WASM ({})", path, line, e.reason());
                 module_loaded = false;
                 stats.failed_to_load++;
             }
@@ -500,7 +548,7 @@ TestStats run_tests(std::string_view path)
 
             for (size_t i = 0; i < expectedValues.size(); i++)
             {
-                auto maybeExpectedValue = parse_value(expectedValues[i]);
+                auto maybeExpectedValue = parse_expected(expectedValues[i]);
                 if (!maybeExpectedValue.has_value())
                 {
                     stats.skipped++;
@@ -508,12 +556,25 @@ TestStats run_tests(std::string_view path)
                     std::println("{}/{} skipped: failed to parse return value of type: {}", path, line, expectedValues[i]["type"].get<std::string>());
                     break;
                 }
+
+                bool found = false;
                 auto expectedValue = maybeExpectedValue.value();
-                if (expectedValue != returnValues[i])
+                for (const auto& oneOf : expectedValue)
                 {
+                    if (oneOf == returnValues[i])
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    std::string expectedText = expectedValue.size() == 1 ? std::format("{}", expectedValue[0]) : "(multiple options)";
+
                     stats.failed++;
                     failed = true;
-                    std::println("{}/{} failed: return value {} has unexpected value {}, expected {}", path, line, i, returnValues[i], expectedValue);
+                    std::println("{}/{} failed: return value {} has unexpected value {}, expected {}", path, line, i, returnValues[i], expectedText);
                     break;
                 }
             }

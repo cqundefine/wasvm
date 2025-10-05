@@ -1,8 +1,10 @@
 #pragma once
 
 #include "Util/Util.h"
+#include "VM/Type.h"
 #include "Value.h"
 #include "WasmFile/WasmFile.h"
+#include <concepts>
 
 class Function
 {
@@ -43,17 +45,20 @@ public:
 
     WasmFile::Limits limits() const;
 
-    void grow(uint32_t pages);
+    void grow(uint64_t pages);
+    bool check_outside_bounds(uint64_t offset, uint64_t count) const;
 
     uint8_t* data() const { return m_data; }
-    uint32_t size() const { return m_size; }
-    std::optional<uint32_t> max() const { return m_max; }
+    uint64_t size() const { return m_size; }
+    std::optional<uint64_t> max() const { return m_max; }
+    AddressType address_type() const { return m_address_type; }
 
 private:
     uint8_t* m_data;
 
-    uint32_t m_size;
-    std::optional<uint32_t> m_max;
+    uint64_t m_size;
+    std::optional<uint64_t> m_max;
+    AddressType m_address_type;
 };
 
 struct Table
@@ -63,23 +68,30 @@ public:
 
     WasmFile::Limits limits() const;
 
-    void grow(uint32_t elements, Reference value);
+    void grow(uint64_t elements, Reference value);
 
-    Reference get(uint32_t index) const;
-    void set(uint32_t index, Reference element);
+    Reference get(uint64_t index) const;
+    void set(uint64_t index, Reference element);
 
-    Reference unsafe_get(uint32_t index) const;
-    void unsafe_set(uint32_t index, Reference element);
+    Reference unsafe_get(uint64_t index) const;
+    void unsafe_set(uint64_t index, Reference element);
 
     Type type() const { return m_type; }
-    uint32_t size() const { return static_cast<uint32_t>(m_elements.size()); }
-    std::optional<uint32_t> max() const { return m_max; }
+    uint64_t size() const { return static_cast<uint64_t>(m_elements.size()); }
+    std::optional<uint64_t> max() const { return m_max; }
+    AddressType address_type() const { return m_address_type; }
 
 private:
     std::vector<Reference> m_elements;
 
     Type m_type;
-    std::optional<uint32_t> m_max;
+    std::optional<uint64_t> m_max;
+    AddressType m_address_type;
+};
+
+template <typename T>
+concept HasAddressType = requires(T a) {
+    { a.address_type() } -> std::same_as<AddressType>;
 };
 
 struct Global
@@ -120,7 +132,7 @@ public:
     void add_memory(Ref<Memory> memory);
     void add_global(Ref<Global> global);
 
-    Ref<Table> get_table(uint32_t index) const;
+    Table* get_table(uint32_t index) const;
 
     RELEASE_INLINE Memory* get_memory(uint32_t index) const
     {

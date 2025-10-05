@@ -1,7 +1,6 @@
 #include "Stream/FileStream.h"
 #include "Tests/SpecTestModule.h"
 #include "Tests/TestRunner.h"
-#include "VM/Proposals.h"
 #include "VM/Trap.h"
 #include "VM/VM.h"
 #include "WASI.h"
@@ -35,14 +34,6 @@ int main(int argc, char** argv)
         .help("enable support for WASI")
         .flag();
 
-    parser.add_argument("--enable-multi-memory")
-        .help("enable multi-memory proposal")
-        .flag();
-
-    parser.add_argument("--enable-extended-const")
-        .help("enable extended-const proposal")
-        .flag();
-
     parser.add_argument("path")
         .help("path of module/test to run");
 
@@ -56,9 +47,6 @@ int main(int argc, char** argv)
         std::cerr << parser;
         return 1;
     }
-
-    g_enable_multi_memory = parser["--enable-multi-memory"] == true;
-    g_enable_extended_const = parser["--enable-extended-const"] == true;
 
     if (parser["-t"] == true)
     {

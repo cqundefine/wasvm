@@ -4,6 +4,12 @@
 #include "Util/SIMD.h"
 #include <cstdint>
 
+enum class AddressType
+{
+    i32,
+    i64
+};
+
 enum class Type : uint8_t
 {
     i32 = 0x7F,
@@ -45,3 +51,4 @@ Value default_value_for_type(Type type);
 ReferenceType get_reference_type_from_reftype(Type type);
 std::string get_type_name(Type type);
 bool is_reference_type(Type type);
+Type type_from_address_type(AddressType);

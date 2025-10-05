@@ -1,11 +1,12 @@
 #include "Validator.h"
+#include "Opcode.h"
 #include "Parser.h"
 #include "Util/Stack.h"
 #include "VM/Label.h"
-#include "VM/Proposals.h"
 #include "VM/Type.h"
 #include "VM/Value.h"
 #include "VM/ValueStack.h"
+#include "WasmFile/WasmFile.h"
 #include <cassert>
 #include <ranges>
 #include <utility>
@@ -98,6 +99,11 @@ public:
         return actual;
     }
 
+    constexpr ValidatorType expect(AddressType expected)
+    {
+        return expect(type_from_address_type(expected));
+    }
+
     using Stack::erase;
     using Stack::push;
     using Stack::size;
@@ -144,11 +150,17 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
                 m_imported_global_count++;
                 m_globals.push_back({ import.globalType, import.globalMutability });
                 break;
-            case WasmFile::ImportType::Memory:
-                m_memories++;
+            case WasmFile::ImportType::Memory: {
+                auto max_pages = import.memoryLimits.address_type == AddressType::i64 ? MAX_WASM_PAGES_I64 : MAX_WASM_PAGES_I32;
+
+                VALIDATION_ASSERT(import.memoryLimits.min <= max_pages, "Invalid import memory size");
+                if (import.memoryLimits.max)
+                    VALIDATION_ASSERT(import.memoryLimits.max <= max_pages, "Invalid import memory size");
+                m_memories.push_back(import.memoryLimits.address_type);
                 break;
+            }
             case WasmFile::ImportType::Table:
-                m_tables.push_back(import.tableRefType);
+                m_tables.push_back({ import.tableRefType, import.tableLimits.address_type });
                 break;
             default:
                 std::unreachable();
@@ -169,14 +181,16 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
 
     for (const auto& memory : wasmFile->memories)
     {
-        VALIDATION_ASSERT(memory.limits.min <= WasmFile::MAX_WASM_PAGES, "Too many memory pages");
+        auto max_pages = memory.limits.address_type == AddressType::i64 ? MAX_WASM_PAGES_I64 : MAX_WASM_PAGES_I32;
+
+        VALIDATION_ASSERT(memory.limits.min <= max_pages, "Too many memory pages");
         if (memory.limits.max)
-            VALIDATION_ASSERT(memory.limits.max <= WasmFile::MAX_WASM_PAGES, "Too many memory pages");
-        m_memories++;
+            VALIDATION_ASSERT(memory.limits.max <= max_pages, "Too many memory pages");
+        m_memories.push_back(memory.limits.address_type);
     }
 
     for (const auto& table : wasmFile->tables)
-        m_tables.push_back(table.refType);
+        m_tables.push_back({ table.refType, table.limits.address_type });
 
     std::vector<std::string> usedExportNames;
 
@@ -194,7 +208,7 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
                 VALIDATION_ASSERT(exp.index < m_globals.size(), "Invalid export index");
                 break;
             case WasmFile::ImportType::Memory:
-                VALIDATION_ASSERT(exp.index < m_memories, "Invalid export index");
+                VALIDATION_ASSERT(exp.index < m_memories.size(), "Invalid export index");
                 break;
             case WasmFile::ImportType::Table:
                 VALIDATION_ASSERT(exp.index < m_tables.size(), "Invalid export index");
@@ -204,22 +218,19 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
         }
     }
 
-    if (!g_enable_multi_memory)
-        VALIDATION_ASSERT(m_memories <= 1, "Too many memories");
-
     for (const auto& element : wasmFile->elements)
     {
         if (element.mode == WasmFile::ElementMode::Active)
         {
             VALIDATION_ASSERT(element.table < m_tables.size(), "Invalid table index");
-            VALIDATION_ASSERT(element.valueType == m_tables[element.table], "Invalid element type");
+            VALIDATION_ASSERT(element.valueType == m_tables[element.table].first, "Invalid element type");
         }
 
         for (const auto& expression : element.referencesExpr)
             validate_constant_expression(expression, element.valueType, true);
 
         if (element.expr.size() > 0)
-            validate_constant_expression(element.expr, Type::i32, true);
+            validate_constant_expression(element.expr, type_from_address_type(m_tables[element.table].second), true);
 
         for (auto index : element.functionIndexes)
             VALIDATION_ASSERT(index < m_functions.size(), "Invalid function index");
@@ -248,17 +259,13 @@ Validator::Validator(Ref<WasmFile::WasmFile> wasmFile)
     {
         if (data.mode == WasmFile::ElementMode::Active)
         {
-            VALIDATION_ASSERT(data.memoryIndex < m_memories, "Invalid memory index");
-            validate_constant_expression(data.expr, Type::i32, true);
+            VALIDATION_ASSERT(data.memoryIndex < m_memories.size(), "Invalid memory index");
+            validate_constant_expression(data.expr, type_from_address_type(m_memories[data.memoryIndex]), true);
         }
     }
 
     for (size_t i = 0; i < wasmFile->functionTypeIndexes.size(); i++)
-    {
-        // if (i == 68)
-        //     asm volatile("int3");
         validate_function(wasmFile->functionTypes[wasmFile->functionTypeIndexes[i]], wasmFile->codeBlocks[i]);
-    }
 
     if (wasmFile->startFunction)
     {
@@ -304,25 +311,25 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
     };
 
     auto validate_load_operation = [&stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
-        VALIDATION_ASSERT(memArg.memoryIndex < m_memories, "Invalid memory index");
+        VALIDATION_ASSERT(memArg.memory_index < m_memories.size(), "Invalid memory index");
         VALIDATION_ASSERT((1ull << memArg.align) <= bitWidth / 8, "Invalid alignment");
-        stack.expect(Type::i32);
+        stack.expect(m_memories[memArg.memory_index]);
         stack.push(type);
     };
 
     auto validate_store_operation = [&stack, this](Type type, uint32_t bitWidth, const WasmFile::MemArg& memArg) {
-        VALIDATION_ASSERT(memArg.memoryIndex < m_memories, "Invalid memory index");
+        VALIDATION_ASSERT(memArg.memory_index < m_memories.size(), "Invalid memory index");
         VALIDATION_ASSERT((1ull << memArg.align) <= bitWidth / 8, "Invalid alignment");
         stack.expect(type);
-        stack.expect(Type::i32);
+        stack.expect(m_memories[memArg.memory_index]);
     };
 
     auto validate_load_lane_operation = [&stack, this](Type type, uint32_t laneSize, const LoadStoreLaneArguments& arguments) {
-        VALIDATION_ASSERT(arguments.memArg.memoryIndex < m_memories, "Invalid memory index");
+        VALIDATION_ASSERT(arguments.memArg.memory_index < m_memories.size(), "Invalid memory index");
         VALIDATION_ASSERT((1ull << arguments.memArg.align) <= laneSize / 8, "Invalid alignment");
         VALIDATION_ASSERT(arguments.lane < 128 / laneSize, "Invalid lane");
         stack.expect(Type::v128);
-        stack.expect(Type::i32);
+        stack.expect(m_memories[arguments.memArg.memory_index]);
         stack.push(Type::v128);
     };
 
@@ -514,11 +521,14 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
             case call_indirect: {
                 const auto& arguments = instruction.get_arguments<CallIndirectArguments>();
 
-                stack.expect(Type::i32);
-
                 VALIDATION_ASSERT(arguments.tableIndex < m_tables.size(), "Invalid code");
                 VALIDATION_ASSERT(arguments.typeIndex < m_wasmFile->functionTypes.size(), "Invalid code");
-                VALIDATION_ASSERT(m_tables[arguments.tableIndex] == Type::funcref, "Invalid code");
+
+                const auto& table = m_tables[arguments.tableIndex];
+
+                VALIDATION_ASSERT(table.first == Type::funcref, "Invalid code");
+
+                stack.expect(table.second);
 
                 const auto& calleeType = m_wasmFile->functionTypes[arguments.typeIndex];
                 for (const auto type : std::views::reverse(calleeType.params))
@@ -587,14 +597,16 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
             }
             case table_get: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size(), "Invalid table");
-                stack.expect(Type::i32);
-                stack.push(m_tables[instruction.get_arguments<uint32_t>()]);
+                const auto& table = m_tables[instruction.get_arguments<uint32_t>()];
+                stack.expect(table.second);
+                stack.push(table.first);
                 break;
             }
             case table_set: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size(), "Invalid table");
-                stack.expect(m_tables[instruction.get_arguments<uint32_t>()]);
-                stack.expect(Type::i32);
+                const auto& table = m_tables[instruction.get_arguments<uint32_t>()];
+                stack.expect(table.first);
+                stack.expect(table.second);
                 break;
             }
 
@@ -613,13 +625,13 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
 #undef X
 
             case memory_size:
-                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories, "Invalid memory");
-                stack.push(Type::i32);
+                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories.size(), "Invalid memory");
+                stack.push(type_from_address_type(m_memories[instruction.get_arguments<uint32_t>()]));
                 break;
             case memory_grow:
-                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories, "Invalid memory");
-                stack.expect(Type::i32);
-                stack.push(Type::i32);
+                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories.size(), "Invalid memory");
+                stack.expect(m_memories[instruction.get_arguments<uint32_t>()]);
+                stack.push(type_from_address_type(m_memories[instruction.get_arguments<uint32_t>()]));
                 break;
             case i32_const:
                 stack.push(Type::i32);
@@ -664,40 +676,51 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
             case memory_init: {
                 VALIDATION_ASSERT(m_wasmFile->dataCount, "Invalid code");
                 const auto& arguments = instruction.get_arguments<MemoryInitArguments>();
-                VALIDATION_ASSERT(arguments.memoryIndex < m_memories, "Invalid code");
+                VALIDATION_ASSERT(arguments.memoryIndex < m_memories.size(), "Invalid code");
                 VALIDATION_ASSERT(arguments.dataIndex < m_wasmFile->dataBlocks.size(), "Invalid code");
                 stack.expect(Type::i32);
                 stack.expect(Type::i32);
-                stack.expect(Type::i32);
+                stack.expect(m_memories[arguments.memoryIndex]);
                 break;
             }
             case data_drop:
-                VALIDATION_ASSERT(m_wasmFile->dataCount, "Invalid code");
-                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_wasmFile->dataBlocks.size(), "Invalid code");
+                VALIDATION_ASSERT(m_wasmFile->dataCount, "Invalid data index from data.drop");
+                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_wasmFile->dataBlocks.size(), "Invalid memory index from data.drop");
                 break;
             case memory_copy: {
                 const auto& arguments = instruction.get_arguments<MemoryCopyArguments>();
-                VALIDATION_ASSERT(arguments.destination < m_memories, "Invalid code");
-                VALIDATION_ASSERT(arguments.source < m_memories, "Invalid code");
-                stack.expect(Type::i32);
-                stack.expect(Type::i32);
-                stack.expect(Type::i32);
+                VALIDATION_ASSERT(arguments.destination < m_memories.size(), "Invalid code");
+                VALIDATION_ASSERT(arguments.source < m_memories.size(), "Invalid code");
+
+                const auto destinationAddress = m_memories[arguments.destination];
+                const auto sourceAddress = m_memories[arguments.source];
+
+                const bool is_count64 = destinationAddress == AddressType::i64 && sourceAddress == AddressType::i64;
+
+                stack.expect(is_count64 ? Type::i64 : Type::i32);
+                stack.expect(sourceAddress);
+                stack.expect(destinationAddress);
                 break;
             }
             case memory_fill:
-                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories, "Invalid code");
+                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_memories.size(), "Invalid memory for memory.fill");
+
+                stack.expect(m_memories[instruction.get_arguments<uint32_t>()]);
                 stack.expect(Type::i32);
-                stack.expect(Type::i32);
-                stack.expect(Type::i32);
+                stack.expect(m_memories[instruction.get_arguments<uint32_t>()]);
                 break;
             case table_init: {
                 const auto& arguments = instruction.get_arguments<TableInitArguments>();
-                VALIDATION_ASSERT(arguments.tableIndex < m_tables.size(), "Invalid code");
-                VALIDATION_ASSERT(arguments.elementIndex < m_wasmFile->elements.size(), "Invalid code");
-                VALIDATION_ASSERT(m_tables[arguments.tableIndex] == m_wasmFile->elements[arguments.elementIndex].valueType, "Invalid code");
+
+                VALIDATION_ASSERT(arguments.tableIndex < m_tables.size(), "Invalid table for table.init");
+                VALIDATION_ASSERT(arguments.elementIndex < m_wasmFile->elements.size(), "Invalid element for table.init");
+
+                const auto& table = m_tables[arguments.tableIndex];
+                VALIDATION_ASSERT(table.first == m_wasmFile->elements[arguments.elementIndex].valueType, "Invalid element type for table.init");
+
                 stack.expect(Type::i32);
                 stack.expect(Type::i32);
-                stack.expect(Type::i32);
+                stack.expect(table.second);
                 break;
             }
             case elem_drop:
@@ -707,28 +730,38 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 const auto& arguments = instruction.get_arguments<TableCopyArguments>();
                 VALIDATION_ASSERT(arguments.destination < m_tables.size(), "Invalid code");
                 VALIDATION_ASSERT(arguments.source < m_tables.size(), "Invalid code");
-                VALIDATION_ASSERT(m_tables[arguments.destination] == m_tables[arguments.source], "Invalid code");
-                stack.expect(Type::i32);
-                stack.expect(Type::i32);
-                stack.expect(Type::i32);
+                VALIDATION_ASSERT(m_tables[arguments.destination].first == m_tables[arguments.source].first, "Invalid code");
+
+                const auto destinationAddress = m_tables[arguments.destination].second;
+                const auto sourceAddress = m_tables[arguments.source].second;
+
+                const bool is_count64 = destinationAddress == AddressType::i64 && sourceAddress == AddressType::i64;
+
+                stack.expect(is_count64 ? Type::i64 : Type::i32);
+                stack.expect(sourceAddress);
+                stack.expect(destinationAddress);
                 break;
             }
-            case table_grow:
+            case table_grow: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size(), "Invalid code");
-                stack.expect(Type::i32);
-                stack.expect(m_tables[instruction.get_arguments<uint32_t>()]);
-                stack.push(Type::i32);
+                const auto& table = m_tables[instruction.get_arguments<uint32_t>()];
+                stack.expect(table.second);
+                stack.expect(table.first);
+                stack.push(type_from_address_type(table.second));
                 break;
+            }
             case table_size:
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size(), "Invalid code");
-                stack.push(Type::i32);
+                stack.push(type_from_address_type(m_tables[instruction.get_arguments<uint32_t>()].second));
                 break;
-            case table_fill:
+            case table_fill: {
                 VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_tables.size(), "Invalid code");
-                stack.expect(Type::i32);
-                stack.expect(m_tables[instruction.get_arguments<uint32_t>()]);
-                stack.expect(Type::i32);
+                const auto& table = m_tables[instruction.get_arguments<uint32_t>()];
+                stack.expect(table.second);
+                stack.expect(table.first);
+                stack.expect(table.second);
                 break;
+            }
             case v128_load8_splat:
                 validate_load_operation(Type::v128, 8, instruction.get_arguments<WasmFile::MemArg>());
                 break;
@@ -760,7 +793,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
             case v128_store32_lane:
             case v128_store64_lane: {
                 const auto& arguments = instruction.get_arguments<LoadStoreLaneArguments>();
-                VALIDATION_ASSERT(arguments.memArg.memoryIndex < m_memories, "Invalid code");
+                VALIDATION_ASSERT(arguments.memArg.memory_index < m_memories.size(), "Invalid code");
                 VALIDATION_ASSERT((1ull << arguments.memArg.align) <= 128 / 8, "Invalid code");
                 stack.expect(Type::v128);
                 stack.expect(Type::i32);
@@ -907,18 +940,12 @@ void Validator::validate_constant_expression(const std::vector<Instruction>& ins
             case i32_add:
             case i32_sub:
             case i32_mul:
-                if (g_enable_extended_const)
-                    validate_binary_operation(Type::i32);
-                else
-                    VALIDATION_ASSERT(false, "Invalid code");
+                validate_binary_operation(Type::i32);
                 break;
             case i64_add:
             case i64_sub:
             case i64_mul:
-                if (g_enable_extended_const)
-                    validate_binary_operation(Type::i64);
-                else
-                    VALIDATION_ASSERT(false, "Invalid code");
+                validate_binary_operation(Type::i64);
                 break;
             case ref_null:
                 stack.push(instruction.get_arguments<Type>());

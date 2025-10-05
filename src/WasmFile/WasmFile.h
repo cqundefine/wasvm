@@ -10,7 +10,6 @@ struct Instruction;
 namespace WasmFile
 {
     constexpr uint32_t WASM_SIGNATURE = 0x6d736100;
-    constexpr uint32_t MAX_WASM_PAGES = 65536;
 
     enum class Section
     {
@@ -45,22 +44,20 @@ namespace WasmFile
 
     struct Limits
     {
-        uint32_t min;
-        std::optional<uint32_t> max;
+        uint64_t min;
+        std::optional<uint64_t> max;
+        AddressType address_type;
 
         static Limits read_from_stream(Stream& stream);
 
-        bool fits_within(const Limits& other) const
-        {
-            return min >= other.min && (!other.max.has_value() || (max.has_value() && max.value() <= other.max.value()));
-        }
+        bool fits_within(const Limits& other) const;
     };
 
     struct MemArg
     {
         uint32_t align;
-        uint32_t offset;
-        uint32_t memoryIndex;
+        uint64_t offset;
+        uint32_t memory_index;
 
         static MemArg read_from_stream(Stream& stream);
     };

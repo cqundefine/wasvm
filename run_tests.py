@@ -68,7 +68,7 @@ for filename in tests:
             skipped += data["skipped"]
             failed_to_load += data["failed_to_load"]
 
-print("-------------------------------------------")
+print("------------------------------------------------------------------")
 print(f"{"Total:":<50} {total}")
 print(f"{"Passed:":<50} {colored(passed, GREEN)} ({colored(f'{passed / total * 100:.2f}%', GREEN)})")
 print(f"{"Failed:":<50} {colored(failed, RED)} ({colored(f'{failed / total * 100:.2f}%', RED)})")

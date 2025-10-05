@@ -1,10 +1,11 @@
 #pragma once
 
-#include "Opcode.h"
 #include "VM/Label.h"
 #include "VM/Trap.h"
 #include "WasmFile.h"
 #include <cstdint>
+
+enum class Opcode;
 
 struct BlockLoopArguments
 {

@@ -12,7 +12,7 @@
 #include <span>
 #include <vector>
 
-constexpr uint32_t WASM_PAGE_SIZE = 65536;
+constexpr uint64_t WASM_PAGE_SIZE = 65536;
 constexpr uint32_t MAX_FRAME_STACK_SIZE = 1024;
 
 class VM
@@ -56,9 +56,9 @@ private:
     static void run_binary_operation();
     template <typename T, Value(function)(T)>
     static void run_unary_operation();
-    template <typename ActualType, typename StackType>
+    template <typename ActualType, IsValueType StackType>
     static void run_load_instruction(const WasmFile::MemArg& memArg);
-    template <typename ActualType, typename StackType>
+    template <typename ActualType, IsValueType StackType>
     static void run_store_instruction(const WasmFile::MemArg& memArg);
     static void branch_to_label(Label label);
     static void call_function(Ref<Function> function);
@@ -69,6 +69,11 @@ private:
     static void run_load_lane_instruction(const LoadStoreLaneArguments& args);
     template <IsVector VectorType, typename ActualType, typename StackType>
     static void run_store_lane_instruction(const LoadStoreLaneArguments& args);
+
+    template <HasAddressType Structure>
+    static uint64_t pop_address(const Structure* structure);
+    template <HasAddressType Structure>
+    static Value to_address(uint64_t value, const Structure* structure);
 
     struct ImportLocation
     {

@@ -38,7 +38,16 @@ SpecTestModule::SpecTestModule()
                                  .refType = Type::funcref,
                                  .limits = WasmFile::Limits {
                                      .min = 10,
-                                     .max = 20 } },
+                                     .max = 20,
+                                     .address_type = AddressType::i32 } },
+        Reference { ReferenceType::Function, {}, nullptr });
+
+    m_table64 = MakeRef<Table>(WasmFile::Table {
+                                   .refType = Type::funcref,
+                                   .limits = WasmFile::Limits {
+                                       .min = 10,
+                                       .max = 20,
+                                       .address_type = AddressType::i64 } },
         Reference { ReferenceType::Function, {}, nullptr });
 
     m_memory = MakeRef<Memory>(WasmFile::Memory {
@@ -65,7 +74,11 @@ std::optional<ImportedObject> SpecTestModule::try_import(std::string_view name, 
             return it != m_functions.end() ? it->second : std::optional<ImportedObject> {};
         }
         case Table:
-            return name == "table" ? m_table : std::optional<ImportedObject> {};
+            if (name == "table")
+                return m_table;
+            if (name == "table64")
+                return m_table64;
+            return std::optional<ImportedObject> {};
         case Memory:
             return name == "memory" ? m_memory : std::optional<ImportedObject> {};
         case Global: {
