@@ -8,6 +8,8 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <print>
+#include <string>
+#include <utility>
 
 struct ArithmeticNaN
 {
@@ -202,7 +204,21 @@ struct std::formatter<TestValue>
     }
 };
 
-std::optional<TestValue> parse_value(nlohmann::json json)
+static constexpr uint64_t lane_size_mask(std::string_view lane)
+{
+    if (lane == "i8")
+        return 0xFF;
+    if (lane == "i16")
+        return 0xFFFF;
+    if (lane == "i32" || lane == "f32")
+        return 0xFFFFFFFF;
+    if (lane == "i64" || lane == "f64")
+        return 0xFFFFFFFFFFFFFFFF;
+
+    std::unreachable();
+}
+
+static std::optional<TestValue> parse_value(nlohmann::json json)
 {
     // FIXME: This still doesn't parse NaNs entirely properly
     try
@@ -221,7 +237,14 @@ std::optional<TestValue> parse_value(nlohmann::json json)
                 else if (lane == "nan:canonical")
                     lanes.push_back(CanonicalNaN { laneType == "f32" ? uint8_t { 32 } : uint8_t { 64 } });
                 else
-                    lanes.push_back(static_cast<uint128_t>(std::stoull(lane.get<std::string>())));
+                {
+                    uint128_t value;
+                    if (laneType[0] == 'f')
+                        value = static_cast<uint128_t>(std::stoull(lane.get<std::string>()));
+                    else
+                        value = static_cast<uint128_t>(std::stoll(lane.get<std::string>()) & lane_size_mask(laneType));
+                    lanes.push_back(value);
+                }
             }
             return TestVector { lanes };
         }
@@ -271,7 +294,7 @@ std::optional<TestValue> parse_value(nlohmann::json json)
     }
 }
 
-std::vector<Value> run_action(TestStats& stats, bool& failed, std::string_view path, uint32_t line, nlohmann::json action)
+static std::vector<Value> run_action(TestStats& stats, bool& failed, std::string_view path, uint32_t line, nlohmann::json action)
 {
     std::string actionType = action["type"];
     if (actionType == "invoke")
@@ -360,7 +383,10 @@ TestStats run_tests(std::string_view path)
         if (type == "module")
         {
             stats.total++;
-            FileStream fileStream(command["filename"].get<std::string>());
+
+            std::string binary_module_path = command.contains("binary_filename") ? command["binary_filename"] : command["filename"];
+            FileStream fileStream(binary_module_path);
+
             try
             {
                 auto file = WasmFile::WasmFile::read_from_stream(fileStream);
@@ -423,12 +449,15 @@ TestStats run_tests(std::string_view path)
                 continue;
             }
 
-            const auto& expectedValues = command["expected"];
-            if (expectedValues.size() != 0)
+            if (command.contains("expected"))
             {
-                failed = true;
-                std::println("{}/{} action failed: has expected return values: {}", path, line, expectedValues.size());
-                continue;
+                const auto& expectedValues = command["expected"];
+                if (expectedValues.size() != 0)
+                {
+                    failed = true;
+                    std::println("{}/{} action failed: has expected return values: {}", path, line, expectedValues.size());
+                    continue;
+                }
             }
         }
         else if (type == "assert_return")
