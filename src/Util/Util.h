@@ -52,6 +52,22 @@ constexpr Ref<T> as(const Ref<Base>& base)
     return std::static_pointer_cast<T>(base);
 }
 
+template <typename From, typename To>
+using CopyConst = std::conditional_t<std::is_const_v<From>, std::add_const_t<To>, std::remove_const_t<To>>;
+
+template <typename OutputType, typename InputType>
+ALWAYS_INLINE bool is(InputType& input)
+{
+    static_assert(!std::same_as<OutputType, InputType>);
+    return dynamic_cast<CopyConst<InputType, OutputType>*>(&input);
+}
+
+template <typename OutputType, typename InputType>
+ALWAYS_INLINE bool is(Ref<InputType> input)
+{
+    return is<OutputType>(*input);
+}
+
 template <typename T>
 using Weak = std::weak_ptr<T>;
 
@@ -61,7 +77,7 @@ concept IsAnyOf = (std::same_as<T, U> || ...);
 void fill_buffer_with_random_data(uint8_t* data, size_t size);
 
 using defer = std::shared_ptr<void>;
-#define DEFER(x) defer _(nullptr, [](...) { x; });
+#define DEFER(x) defer _(nullptr, [&](...) { x; });
 
 template <std::floating_point T>
 consteval T typed_nan()

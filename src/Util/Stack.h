@@ -49,6 +49,16 @@ public:
         return std::move(values);
     }
 
+    [[nodiscard]] constexpr std::span<T> span_last_n_values(uint32_t n)
+    {
+#ifdef DEBUG_BUILD
+        if (size() < n)
+            throw Exception("Not enough elements on the stack");
+#endif
+        std::span<T> values(m_stack.data() + size() - n, m_stack.data() + size());
+        return values;
+    }
+
     [[nodiscard]] constexpr const T& peek() const
     {
         return m_stack.back();

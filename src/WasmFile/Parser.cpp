@@ -110,6 +110,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
             case br:
             case br_if:
             case call:
+            case return_call:
             case local_get:
             case local_set:
             case local_tee:
@@ -128,6 +129,7 @@ std::vector<Instruction> parse(Stream& stream, Ref<WasmFile::WasmFile> wasmFile)
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = BranchTableArgumentsPrevalidated { .labels = stream.read_vec<uint32_t>(), .defaultLabel = stream.read_leb<uint32_t>() } });
                 break;
             case call_indirect:
+            case return_call_indirect:
                 instructions.push_back(Instruction { .opcode = opcode, .arguments = CallIndirectArguments {
                                                                            .typeIndex = stream.read_leb<uint32_t>(),
                                                                            .tableIndex = stream.read_leb<uint32_t>(),

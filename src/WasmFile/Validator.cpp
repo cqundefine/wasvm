@@ -324,7 +324,7 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
         stack.expect(m_memories[memArg.memory_index]);
     };
 
-    auto validate_load_lane_operation = [&stack, this](Type type, uint32_t laneSize, const LoadStoreLaneArguments& arguments) {
+    auto validate_load_lane_operation = [&stack, this](uint32_t laneSize, const LoadStoreLaneArguments& arguments) {
         VALIDATION_ASSERT(arguments.memArg.memory_index < m_memories.size(), "Invalid memory index");
         VALIDATION_ASSERT((1ull << arguments.memArg.align) <= laneSize / 8, "Invalid alignment");
         VALIDATION_ASSERT(arguments.lane < 128 / laneSize, "Invalid lane");
@@ -536,6 +536,45 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
 
                 for (const auto returned : calleeType.returns)
                     stack.push(returned);
+                break;
+            }
+            case return_call: {
+                VALIDATION_ASSERT(instruction.get_arguments<uint32_t>() < m_functions.size(), "Invalid code");
+
+                const auto& calleeType = m_wasmFile->functionTypes[m_functions[instruction.get_arguments<uint32_t>()]];
+                for (const auto type : std::views::reverse(calleeType.params))
+                    stack.expect(type);
+
+                VALIDATION_ASSERT(calleeType.returns.size() == functionType.returns.size(), "Invalid code");
+                for (size_t i = 0; i < calleeType.returns.size(); i++)
+                    VALIDATION_ASSERT(calleeType.returns[i] == functionType.returns[i], "Invalid code");
+
+                stack.last_label().unreachable = true;
+                stack.erase(stack.last_label().stackHeight, 0);
+                break;
+            }
+            case return_call_indirect: {
+                const auto& arguments = instruction.get_arguments<CallIndirectArguments>();
+
+                VALIDATION_ASSERT(arguments.tableIndex < m_tables.size(), "Invalid code");
+                VALIDATION_ASSERT(arguments.typeIndex < m_wasmFile->functionTypes.size(), "Invalid code");
+
+                const auto& table = m_tables[arguments.tableIndex];
+
+                VALIDATION_ASSERT(table.first == Type::funcref, "Invalid code");
+
+                stack.expect(table.second);
+
+                const auto& calleeType = m_wasmFile->functionTypes[arguments.typeIndex];
+                for (const auto type : std::views::reverse(calleeType.params))
+                    stack.expect(type);
+
+                VALIDATION_ASSERT(calleeType.returns.size() == functionType.returns.size(), "Invalid code");
+                for (size_t i = 0; i < calleeType.returns.size(); i++)
+                    VALIDATION_ASSERT(calleeType.returns[i] == functionType.returns[i], "Invalid code");
+
+                stack.last_label().unreachable = true;
+                stack.erase(stack.last_label().stackHeight, 0);
                 break;
             }
             case drop:
@@ -777,16 +816,16 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 validate_load_operation(Type::v128, 64, instruction.get_arguments<WasmFile::MemArg>());
                 break;
             case v128_load8_lane:
-                validate_load_lane_operation(Type::v128, 8, instruction.get_arguments<LoadStoreLaneArguments>());
+                validate_load_lane_operation(8, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
             case v128_load16_lane:
-                validate_load_lane_operation(Type::v128, 16, instruction.get_arguments<LoadStoreLaneArguments>());
+                validate_load_lane_operation(16, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
             case v128_load32_lane:
-                validate_load_lane_operation(Type::v128, 32, instruction.get_arguments<LoadStoreLaneArguments>());
+                validate_load_lane_operation(32, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
             case v128_load64_lane:
-                validate_load_lane_operation(Type::v128, 64, instruction.get_arguments<LoadStoreLaneArguments>());
+                validate_load_lane_operation(64, instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
             case v128_store8_lane:
             case v128_store16_lane:
@@ -879,6 +918,15 @@ void Validator::validate_function(const WasmFile::FunctionType& functionType, Wa
                 stack.push(Type::v128);
                 break;
             case v128_bitselect:
+            case f32x4_relaxed_madd:
+            case f32x4_relaxed_nmadd:
+            case f64x2_relaxed_madd:
+            case f64x2_relaxed_nmadd:
+            case i8x16_relaxed_laneselect:
+            case i16x8_relaxed_laneselect:
+            case i32x4_relaxed_laneselect:
+            case i64x2_relaxed_laneselect:
+            case i32x4_relaxed_dot_i8x16_i7x16_add_s:
                 stack.expect(Type::v128);
                 stack.expect(Type::v128);
                 stack.expect(Type::v128);

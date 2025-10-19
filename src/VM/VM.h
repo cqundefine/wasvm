@@ -13,7 +13,7 @@
 #include <vector>
 
 constexpr uint64_t WASM_PAGE_SIZE = 65536;
-constexpr uint32_t MAX_FRAME_STACK_SIZE = 1024;
+constexpr uint32_t MAX_FRAME_STACK_SIZE = 256;
 
 class VM
 {
@@ -49,8 +49,6 @@ private:
     static Value run_bare_code(Ref<RealModule> mod, std::span<const Instruction> instructions);
 
     static Memory* get_current_frame_memory_0();
-
-    static void clean_up_frame();
 
     template <typename LhsType, typename RhsType, Value(function)(LhsType, RhsType)>
     static void run_binary_operation();

@@ -15,6 +15,8 @@ enum class Opcode
     return_ = 0x0F,
     call = 0x10,
     call_indirect = 0x11,
+    return_call = 0x12,
+    return_call_indirect = 0x13,
     drop = 0x1A,
     select_ = 0x1B,
     select_typed = 0x1C,
@@ -1087,7 +1089,7 @@ enum class MultiByteFD
     X(i32x4_min_u, vector_min, uint32x4_t, uint32x4_t, uint32x4_t)                                            \
     X(i32x4_max_s, vector_max, int32x4_t, int32x4_t, int32x4_t)                                               \
     X(i32x4_max_u, vector_max, uint32x4_t, uint32x4_t, uint32x4_t)                                            \
-    X(i32x4_dot_i16x8_s, vector_dot, int16x8_t, int16x8_t, int32x4_t)                                         \
+    X(i32x4_dot_i16x8_s, vector_dot<int32x4_t>, int16x8_t, int16x8_t, int32x4_t)                              \
     X(i64x2_shl, vector_shl, uint64x2_t, uint32_t, uint64x2_t)                                                \
     X(i64x2_shr_s, vector_shr, int64x2_t, uint32_t, int64x2_t)                                                \
     X(i64x2_shr_u, vector_shr, uint64x2_t, uint32_t, uint64x2_t)                                              \
@@ -1133,4 +1135,5 @@ enum class MultiByteFD
     X(f32x4_relaxed_max, vector_max, float32x4_t, float32x4_t, float32x4_t)                                   \
     X(f64x2_relaxed_min, vector_min, float64x2_t, float64x2_t, float64x2_t)                                   \
     X(f64x2_relaxed_max, vector_max, float64x2_t, float64x2_t, float64x2_t)                                   \
-    X(i16x8_relaxed_q15mulr_s, vector_q15mulr_sat, int16x8_t, int16x8_t, int16x8_t)
+    X(i16x8_relaxed_q15mulr_s, vector_q15mulr_sat, int16x8_t, int16x8_t, int16x8_t)                           \
+    X(i16x8_relaxed_dot_i8x16_i7x16_s, vector_dot<int16x8_t>, int8x16_t, int8x16_t, int16x8_t)

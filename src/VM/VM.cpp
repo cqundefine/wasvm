@@ -157,23 +157,42 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
     m_frame_stack.push(m_frame);
     m_frame = new Frame(mod);
 
+    const auto clean_up_frame = [&]() {
+        delete m_frame;
+        m_frame = m_frame_stack.pop();
+    };
+
     DEFER(clean_up_frame());
 
-    const auto& type = function->type();
-    const auto& code = function->code();
-
-    if (args.size() != type.params.size())
+    if (args.size() != function->type().params.size())
         throw Trap("Invalid argument count passed");
 
     for (const auto& param : args)
         m_frame->locals.push_back(param);
 
-    for (const auto local : code.locals)
+    for (const auto local : function->code().locals)
         m_frame->locals.push_back(default_value_for_type(local));
 
-    while (m_frame->ip < code.instructions.size())
+    const auto perform_tail_call = [&](Ref<RealFunction> new_function) {
+        function = new_function.get();
+        const auto args = m_frame->stack.span_last_n_values(function->type().params.size());
+
+        m_frame->locals.clear();
+
+        for (const auto& param : args)
+            m_frame->locals.push_back(param);
+
+        for (const auto local : function->code().locals)
+            m_frame->locals.push_back(default_value_for_type(local));
+
+        m_frame->stack.clear();
+        m_frame->ip = 0;
+        m_frame->mod = function->parent();
+    };
+
+    while (m_frame->ip < function->code().instructions.size())
     {
-        const auto& instruction = code.instructions[m_frame->ip++];
+        const auto& instruction = function->code().instructions[m_frame->ip++];
 
         switch (instruction.opcode)
         {
@@ -222,7 +241,7 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
             }
 
             case return_:
-                return std::move(m_frame->stack.pop_n_values(type.returns.size()));
+                return m_frame->stack.pop_n_values(function->type().returns.size());
             case call:
                 call_function(mod->get_function(instruction.get_arguments<uint32_t>()));
                 break;
@@ -247,6 +266,52 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                     throw Trap("Invalid call indirect type");
 
                 call_function(function);
+                break;
+            }
+
+            case return_call: {
+                const auto& new_function = mod->get_function(instruction.get_arguments<uint32_t>());
+                if (is<RealFunction>(new_function))
+                {
+                    perform_tail_call(as<RealFunction>(new_function));
+                    break;
+                }
+                else
+                {
+                    const auto args = m_frame->stack.span_last_n_values(function->type().params.size());
+                    return new_function->run(args);
+                }
+            }
+            case return_call_indirect: {
+                const auto& arguments = instruction.get_arguments<CallIndirectArguments>();
+
+                const auto* table = mod->get_table(arguments.tableIndex);
+                uint64_t index = pop_address(table);
+
+                const auto reference = table->get(index);
+
+                if (!reference.index)
+                    throw Trap("Call indirect on null reference");
+
+                if (reference.type != ReferenceType::Function)
+                    throw Trap("Call indirect on non-function reference");
+
+                auto* module = reference.module ? reference.module : mod.get();
+                auto new_function = module->get_function(*reference.index);
+
+                if (new_function->type() != module->wasm_file()->functionTypes[arguments.typeIndex])
+                    throw Trap("Invalid call indirect type");
+
+                if (is<RealFunction>(new_function))
+                {
+                    perform_tail_call(as<RealFunction>(new_function));
+                    break;
+                }
+                else
+                {
+                    const auto args = m_frame->stack.span_last_n_values(function->type().params.size());
+                    return new_function->run(args);
+                }
                 break;
             }
 
@@ -631,7 +696,11 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
                 m_frame->stack.push(vector);
                 break;
             }
-            case v128_bitselect: {
+            case v128_bitselect:
+            case i8x16_relaxed_laneselect:
+            case i16x8_relaxed_laneselect:
+            case i32x4_relaxed_laneselect:
+            case i64x2_relaxed_laneselect: {
                 uint128_t mask = m_frame->stack.pop_as<uint128_t>();
                 uint128_t falseVector = m_frame->stack.pop_as<uint128_t>();
                 uint128_t trueVector = m_frame->stack.pop_as<uint128_t>();
@@ -662,17 +731,66 @@ std::vector<Value> VM::run_function(Ref<RealModule> mod, const RealFunction* fun
             case v128_store64_lane:
                 run_store_lane_instruction<uint64x2_t, uint64_t, uint64_t>(instruction.get_arguments<LoadStoreLaneArguments>());
                 break;
+            case f32x4_relaxed_madd: {
+                auto c = m_frame->stack.pop_as<float32x4_t>();
+                auto b = m_frame->stack.pop_as<float32x4_t>();
+                auto a = m_frame->stack.pop_as<float32x4_t>();
+                m_frame->stack.push(a * b + c);
+                break;
+            }
+            case f32x4_relaxed_nmadd: {
+                auto c = m_frame->stack.pop_as<float32x4_t>();
+                auto b = m_frame->stack.pop_as<float32x4_t>();
+                auto a = m_frame->stack.pop_as<float32x4_t>();
+                m_frame->stack.push(-(a * b) + c);
+                break;
+            }
+            case f64x2_relaxed_madd: {
+                auto c = m_frame->stack.pop_as<float64x2_t>();
+                auto b = m_frame->stack.pop_as<float64x2_t>();
+                auto a = m_frame->stack.pop_as<float64x2_t>();
+                m_frame->stack.push(a * b + c);
+                break;
+            }
+            case f64x2_relaxed_nmadd: {
+                auto c = m_frame->stack.pop_as<float64x2_t>();
+                auto b = m_frame->stack.pop_as<float64x2_t>();
+                auto a = m_frame->stack.pop_as<float64x2_t>();
+                m_frame->stack.push(-(a * b) + c);
+                break;
+            }
+            case i32x4_relaxed_dot_i8x16_i7x16_add_s: {
+                auto c = m_frame->stack.pop_as<int32x4_t>();
+                auto b = m_frame->stack.pop_as<int8x16_t>();
+                auto a = m_frame->stack.pop_as<int8x16_t>();
+
+                int32x4_t result = c;
+                for (int lane = 0; lane < 4; ++lane)
+                {
+                    int32_t sum = 0;
+                    for (int j = 0; j < 4; ++j)
+                    {
+                        int idx = lane * 4 + j;
+                        sum += static_cast<int32_t>(a[idx]) * static_cast<int32_t>(b[idx]);
+                    }
+                    result[lane] += sum;
+                }
+
+                m_frame->stack.push(result);
+
+                break;
+            }
             default:
                 throw Trap(std::format("Unknown opcode {:#x}", static_cast<uint32_t>(instruction.opcode)));
         }
     }
 
 #ifdef DEBUG_BUILD
-    if (m_frame->stack.size() != type.returns.size())
+    if (m_frame->stack.size() != function->type().returns.size())
         throw Trap("Extra elements on stack at the end of a function");
 #endif
 
-    return std::move(m_frame->stack.pop_n_values(type.returns.size()));
+    return m_frame->stack.pop_n_values(function->type().returns.size());
 }
 
 Ref<Module> VM::get_registered_module(const std::string& name)
@@ -756,12 +874,6 @@ Memory* VM::get_current_frame_memory_0()
 {
     // FIXME: Verify there is a memory 0
     return m_frame->mod->get_memory(0);
-}
-
-void VM::clean_up_frame()
-{
-    delete m_frame;
-    m_frame = m_frame_stack.pop();
 }
 
 template <typename LhsType, typename RhsType, Value(function)(LhsType, RhsType)>

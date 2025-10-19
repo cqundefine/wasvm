@@ -26,6 +26,7 @@ namespace WasmFile
         Code = 10,
         Data = 11,
         DataCount = 12,
+        Tag = 13,
     };
 
     class InvalidWASMException

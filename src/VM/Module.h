@@ -9,13 +9,15 @@
 class Function
 {
 public:
+    virtual ~Function() = default;
+
     virtual const WasmFile::FunctionType& type() const = 0;
     [[nodiscard]] virtual std::vector<Value> run(std::span<const Value> args) const = 0;
 };
 
-struct RealModule;
+class RealModule;
 
-class RealFunction : public Function
+class RealFunction final : public Function
 {
 public:
     constexpr RealFunction(WasmFile::FunctionType* type, WasmFile::Code* code, Ref<RealModule> parent)
@@ -61,7 +63,7 @@ private:
     AddressType m_address_type;
 };
 
-struct Table
+class Table
 {
 public:
     Table(const WasmFile::Table& table, Reference initialValue);
@@ -94,7 +96,7 @@ concept HasAddressType = requires(T a) {
     { a.address_type() } -> std::same_as<AddressType>;
 };
 
-struct Global
+class Global
 {
 public:
     Global(Type type, WasmFile::GlobalMutability mutability, Value defaultValue);
@@ -106,10 +108,10 @@ public:
     WasmFile::GlobalMutability mutability() const { return m_mutability; }
 
 private:
-    Value m_value;
-
     Type m_type;
     WasmFile::GlobalMutability m_mutability;
+
+    Value m_value;
 };
 
 using ImportedObject = std::variant<Ref<Function>, Ref<Table>, Ref<Memory>, Ref<Global>>;
@@ -117,6 +119,8 @@ using ImportedObject = std::variant<Ref<Function>, Ref<Table>, Ref<Memory>, Ref<
 class Module
 {
 public:
+    virtual ~Module() = default;
+
     virtual std::optional<ImportedObject> try_import(std::string_view name, WasmFile::ImportType type) const = 0;
 };
 

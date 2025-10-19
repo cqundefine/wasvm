@@ -8,7 +8,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
 project(WASVM)
 
-add_compile_options(-Wimplicit-fallthrough -Wno-user-defined-literals -Wno-explicit-specialization-storage-class -Wno-deprecated-declarations)
 add_link_options(-static-libgcc -static-libstdc++)
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
@@ -22,8 +21,13 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(DEBUG_BUILD)
 endif()
 
-file(GLOB_RECURSE SOURCES src/*.cpp external/*.cpp)
+file(GLOB_RECURSE SOURCES src/*.cpp)
 add_executable(wasvm ${SOURCES})
+target_compile_options(wasvm PRIVATE -Wall -Wextra -Werror -Wimplicit-fallthrough -Wno-user-defined-literals -Wno-explicit-specialization-storage-class -Wno-deprecated-declarations -Wno-missing-designated-field-initializers -Wno-sign-compare)
 
 target_include_directories(wasvm PUBLIC src)
 target_include_directories(wasvm PUBLIC external)
+
+file(GLOB_RECURSE EXTERNAL_SOURCES external/*.cpp)
+add_library(wasvm_externals ${EXTERNAL_SOURCES})
+target_link_libraries(wasvm PRIVATE wasvm_externals)

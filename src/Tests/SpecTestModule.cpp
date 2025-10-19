@@ -3,7 +3,7 @@
 #include "VM/Type.h"
 #include "WasmFile/WasmFile.h"
 
-class EmptyFunction : public Function
+class EmptyFunction final : public Function
 {
 public:
     EmptyFunction(const std::vector<Type>& params)
@@ -18,7 +18,7 @@ public:
         return m_type;
     }
 
-    virtual std::vector<Value> run(std::span<const Value> args) const override
+    virtual std::vector<Value> run(std::span<const Value>) const override
     {
         return {};
     }

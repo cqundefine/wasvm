@@ -176,11 +176,14 @@ constexpr Value operation_vector_q15mulr_sat(int16x8_t a, int16x8_t b)
     return result;
 }
 
-constexpr Value operation_vector_dot(int16x8_t a, int16x8_t b)
+template <IsVector ResultType, IsVector T>
+constexpr Value operation_vector_dot(T a, T b)
 {
-    uint32x4_t result {};
-    for (size_t i = 0; i < lane_count<int16x8_t>(); i += 2)
-        result[i / 2] = static_cast<int32_t>(a[i]) * static_cast<int32_t>(b[i]) + static_cast<int32_t>(a[i + 1]) * static_cast<int32_t>(b[i + 1]);
+    static_assert(lane_count<ResultType>() * 2 == lane_count<T>());
+
+    ResultType result {};
+    for (size_t i = 0; i < lane_count<T>(); i += 2)
+        result[i / 2] = static_cast<VectorElement<ResultType>>(a[i]) * static_cast<VectorElement<ResultType>>(b[i]) + static_cast<VectorElement<ResultType>>(a[i + 1]) * static_cast<VectorElement<ResultType>>(b[i + 1]);
     return result;
 }
 
